@@ -1,1 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Chord Player</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0b1f26;
+      color: #f5f5f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: #122b35;
+      padding: 24px 32px;
+      border-radius: 12px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+      text-align: center;
+      min-width: 260px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+    p {
+      margin: 4px 0 16px;
+      opacity: 0.8;
+    }
+    button {
+      background: #1dd1a1;
+      border: none;
+      color: #041015;
+      padding: 10px 20px;
+      border-radius: 999px;
+      font-size: 16px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover {
+      background: #10ac84;
+    }
+    .error {
+      color: #ff6b6b;
+      margin-top: 8px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 id="chord-label">Chord Player</h1>
+    <p id="status">Loading chord…</p>
+    <button id="play-btn" disabled>Play again</button>
+    <div id="error" class="error"></div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const chordParam = params.get("chord");
+
+    const chordLabel = document.getElementById("chord-label");
+    const statusEl = document.getElementById("status");
+    const errorEl = document.getElementById("error");
+    const playBtn = document.getElementById("play-btn");
+
+    if (!chordParam) {
+      chordLabel.textContent = "No chord provided";
+      statusEl.textContent = "Add ?chord=Cmaj7 to the URL.";
+      errorEl.textContent = "";
+      playBtn.disabled = true;
+    }
+
+    chordLabel.textContent = chordParam || "Chord Player";
+
+    function parseChord(chord) {
+      const match = chord.match(/^([A-G](?:#|b)?)(.*)$/i);
+      if (!match) return null;
+      const root = match[1];
+      const quality = match[2].toLowerCase().trim();
+      return { root, quality };
+    }
+
+    const ROOT_TO_SEMITONE = {
+      "C": 0, "B#": 0,
+      "C#": 1, "Db": 1,
+      "D": 2,
+      "D#": 3, "Eb": 3,
+      "E": 4, "Fb": 4,
+      "F": 5, "E#": 5,
+      "F#": 6, "Gb": 6,
+      "G": 7,
+      "G#": 8, "Ab": 8,
+      "A": 9,
+      "A#": 10, "Bb": 10,
+      "B": 11, "Cb": 11
+    };
+
+    function rootToMidi(root, octave = 4) {
+      const semitone = ROOT_TO_SEMITONE[root.toUpperCase()];
+      if (semitone === undefined) return null;
+      return 12 * (octave + 1) + semitone;
+    }
+
+    function buildChordNotes(parsed) {
+      if (!parsed) return null;
+      const { root, quality } = parsed;
+      const rootMidi = rootToMidi(root, 4);
+      if (rootMidi == null) return null;
+
+      let intervals;
+      if (quality === "" || quality === "maj" || quality === "major") {
+        intervals = [0, 4, 7];
+      } else if (quality === "m" || quality === "min" || quality === "minor") {
+        intervals = [0, 3, 7];
+      } else if (quality === "7") {
+        intervals = [0, 4, 7, 10];
+      } else if (quality === "maj7" || quality === "Δ" || quality === "ma7") {
+        intervals = [0, 4, 7, 11];
+      } else if (quality === "m7" || quality === "min7") {
+        intervals = [0, 3, 7, 10];
+      } else if (quality === "dim" || quality === "°") {
+        intervals = [0, 3, 6];
+      } else if (quality === "dim7" || quality === "°7") {
+        intervals = [0, 3, 6, 9];
+      } else if (quality === "aug" || quality === "+") {
+        intervals = [0, 4, 8];
+      } else if (quality.startsWith("sus2")) {
+        intervals = [0, 2, 7];
+      } else if (quality.startsWith("sus4") || quality === "sus") {
+        intervals = [0, 5, 7];
+      } else {
+        intervals = [0, 4, 7];
+      }
+
+      return intervals.map(i => rootMidi + i);
+    }
+
+    let audioCtx = null;
+
+    function midiToFreq(midi) {
+      return 440 * Math.pow(2, (midi - 69) / 12);
+    }
+
+    function playChord(midiNotes, duration = 1.2) {
+      if (!midiNotes || !midiNotes.length) return;
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      const now = audioCtx.currentTime;
+      midiNotes.forEach((midi, index) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = midiToFreq(midi);
+
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.8, now + 0.02);
+        gain.gain.linearRampToValueAtTime(0.0, now + duration);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.start(now + index * 0.01);
+        osc.stop(now + duration + 0.1);
+      });
+    }
+
+    let currentNotes = null;
+
+    function init() {
+      if (!chordParam) return;
+
+      const parsed = parseChord(chordParam);
+      const notes = buildChordNotes(parsed);
+
+      if (!notes) {
+        statusEl.textContent = "Could not parse chord.";
+        errorEl.textContent = "Chord: " + chordParam;
+        playBtn.disabled = true;
+        return;
+      }
+
+      currentNotes = notes;
+      statusEl.textContent = "Click to play again.";
+      errorEl.textContent = "";
+      playBtn.disabled = false;
+
+      playChord(currentNotes);
+    }
+
+    playBtn.addEventListener("click", () => {
+      if (currentNotes) playChord(currentNotes);
+    });
+
+    init();
+  </script>
+</body>
+</html>
 
