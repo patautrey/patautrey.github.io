@@ -1,63 +1,166 @@
-function playChord(midiNotes, duration = 1.8) {
-  if (!midiNotes || !midiNotes.length) return;
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Chord Player</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0b1f26;
+      color: #f5f5f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: #122b35;
+      padding: 24px 32px;
+      border-radius: 12px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+      text-align: center;
+      min-width: 260px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+    p {
+      margin: 4px 0 16px;
+      opacity: 0.8;
+    }
+    button {
+      background: #1dd1a1;
+      border: none;
+      color: #041015;
+      padding: 10px 20px;
+      border-radius: 999px;
+      font-size: 16px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover {
+      background: #10ac84;
+    }
+    .error {
+      color: #ff6b6b;
+      margin-top: 8px;
+      font-size: 14px;
+    }
+  </style>
+</head>
 
-  const now = audioCtx.currentTime;
+<body>
+  <div class="card">
+    <h1 id="chord-label">Chord Player</h1>
+    <p id="status">Loading chord…</p>
+    <button id="play-btn" disabled>Play again</button>
+    <div id="error" class="error"></div>
+  </div>
 
-  midiNotes.forEach((midi, index) => {
-    const carrierFreq = midiToFreq(midi);
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const chordParam = params.get("chord");
 
-    // --- FM Operators ---
-    const carrier = audioCtx.createOscillator();   // main tone
-    const modulator = audioCtx.createOscillator(); // modulator (adds EP character)
+    const chordLabel = document.getElementById("chord-label");
+    const statusEl = document.getElementById("status");
+    const errorEl = document.getElementById("error");
+    const playBtn = document.getElementById("play-btn");
 
-    const modGain = audioCtx.createGain(); // modulation depth
-    const amp = audioCtx.createGain();     // final amplitude envelope
-    const filter = audioCtx.createBiquadFilter();
+    if (!chordParam) {
+      chordLabel.textContent = "No chord provided";
+      statusEl.textContent = "Add ?chord=Cmaj7 to the URL.";
+      errorEl.textContent = "";
+      playBtn.disabled = true;
+    }
 
-    // --- FM Setup ---
-    carrier.type = "sine";
-    modulator.type = "sine";
+    chordLabel.textContent = chordParam || "Chord Player";
 
-    // Classic EP ratio: 1:2
-    carrier.frequency.value = carrierFreq;
-    modulator.frequency.value = carrierFreq * 2;
+    function parseChord(chord) {
+      const match = chord.match(/^([A-G](?:#|b)?)(.*)$/i);
+      if (!match) return null;
+      const root = match[1];
+      const quality = match[2].toLowerCase().trim();
+      return { root, quality };
+    }
 
-    // Modulation depth (controls brightness)
-    modGain.gain.setValueAtTime(0, now);
-    modGain.gain.linearRampToValueAtTime(80, now + 0.03);  // soft EP attack
-    modGain.gain.linearRampToValueAtTime(20, now + 0.25);  // mellow sustain
-    modGain.gain.linearRampToValueAtTime(0, now + duration + 0.4);
+    const ROOT_TO_SEMITONE = {
+      "C": 0, "B#": 0,
+      "C#": 1, "Db": 1,
+      "D": 2,
+      "D#": 3, "Eb": 3,
+      "E": 4, "Fb": 4,
+      "F": 5, "E#": 5,
+      "F#": 6, "Gb": 6,
+      "G": 7,
+      "G#": 8, "Ab": 8,
+      "A": 9,
+      "A#": 10, "Bb": 10,
+      "B": 11, "Cb": 11
+    };
 
-    // Connect FM: modulator → modGain → carrier.frequency
-    modulator.connect(modGain);
-    modGain.connect(carrier.frequency);
+    function rootToMidi(root, octave = 4) {
+      const semitone = ROOT_TO_SEMITONE[root.toUpperCase()];
+      if (semitone === undefined) return null;
+      return 12 * (octave + 1) + semitone;
+    }
 
-    // --- Filter for warmth ---
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(2400, now);
-    filter.frequency.linearRampToValueAtTime(1600, now + 0.4);
+    function buildChordNotes(parsed) {
+      if (!parsed) return null;
+      const { root, quality } = parsed;
+      const rootMidi = rootToMidi(root, 4);
+      if (rootMidi == null) return null;
 
-    // --- Amplitude Envelope (EP‑like) ---
-    amp.gain.setValueAtTime(0, now);
-    amp.gain.linearRampToValueAtTime(0.28, now + 0.06);   // soft EP attack
-    amp.gain.linearRampToValueAtTime(0.22, now + 0.25);   // mellow body
-    amp.gain.linearRampToValueAtTime(0.0, now + duration + 0.5); // smooth release
+      let intervals;
+      if (quality === "" || quality === "maj" || quality === "major") {
+        intervals = [0, 4, 7];
+      } else if (quality === "m" || quality === "min" || quality === "minor") {
+        intervals = [0, 3, 7];
+      } else if (quality === "7") {
+        intervals = [0, 4, 7, 10];
+      } else if (quality === "maj7" || quality === "Δ" || quality === "ma7") {
+        intervals = [0, 4, 7, 11];
+      } else if (quality === "m7" || quality === "min7") {
+        intervals = [0, 3, 7, 10];
+      } else if (quality === "dim" || quality === "°") {
+        intervals = [0, 3, 6];
+      } else if (quality === "dim7" || quality === "°7") {
+        intervals = [0, 3, 6, 9];
+      } else if (quality === "aug" || quality === "+") {
+        intervals = [0, 4, 8];
+      } else if (quality.startsWith("sus2")) {
+        intervals = [0, 2, 7];
+      } else if (quality.startsWith("sus4") || quality === "sus") {
+        intervals = [0, 5, 7];
+      } else {
+        intervals = [0, 4, 7];
+      }
 
-    // Routing
-    carrier.connect(filter);
-    filter.connect(amp);
-    amp.connect(audioCtx.destination);
+      return intervals.map(i => rootMidi + i);
+    }
 
-    // Slight stagger to avoid phase collisions
-    const offset = index * 0.012;
+    let audioCtx = null;
 
-    carrier.start(now + offset);
-    modulator.start(now + offset);
+    function midiToFreq(midi) {
+      return 440 * Math.pow(2, (midi - 69) / 12);
+    }
 
-    carrier.stop(now + duration + 0.6);
-    modulator.stop(now + duration + 0.6);
-  });
-}
+    // ⭐ FM ELECTRIC PIANO WITH STRONGER ATTACK
+    function playChord(midiNotes, duration = 1.8) {
+      if (!midiNotes || !midiNotes.length) return;
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      const now = audioCtx.currentTime;
+
+      midiNotes.forEach((midi, index) => {
+        const carrierFreq = midiToFreq(midi);
+
+        // --- FM Operators ---
+        const carrier = audioCtx.createOscillator();
+        const modulator = audioCtx.createOscillator();
+
+        const modGain = audio
