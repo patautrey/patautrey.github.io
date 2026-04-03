@@ -160,61 +160,9 @@
         const gain = audioCtx.createGain();
         const filter = audioCtx.createBiquadFilter();
 
-        // Tone
-        osc.type = "sine";
+        // Smooth, warm tone
+        osc.type = "triangle";
         osc.frequency.value = midiToFreq(midi);
         osc.detune.value = (Math.random() - 0.5) * 8; // ±4 cents
 
-        // Filter
-        filter.type = "lowpass";
-        filter.frequency.value = 4200;
-
-        // Envelope
-        gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(0.35, now + 0.08);
-        gain.gain.linearRampToValueAtTime(0.0, now + duration + 0.1);
-
-        // Routing
-        osc.connect(filter);
-        filter.connect(gain);
-        gain.connect(audioCtx.destination);
-
-        // Slight stagger
-        osc.start(now + index * 0.015);
-        osc.stop(now + duration + 0.2);
-      });
-    }
-
-    let currentNotes = null;
-
-    function init() {
-      if (!chordParam) return;
-
-      const parsed = parseChord(chordParam);
-      const notes = buildChordNotes(parsed);
-
-      if (!notes) {
-        statusEl.textContent = "Could not parse chord.";
-        errorEl.textContent = "Chord: " + chordParam;
-        playBtn.disabled = true;
-        return;
-      }
-
-      currentNotes = notes;
-      statusEl.textContent = "Click to play again.";
-      errorEl.textContent = "";
-      playBtn.disabled = false;
-
-      playChord(currentNotes);
-    }
-
-    playBtn.addEventListener("click", () => {
-      if (currentNotes) playChord(currentNotes);
-    });
-
-    init();
-  </script>
-</body>
-</html>
-
-
+        // Gentle
