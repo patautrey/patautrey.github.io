@@ -147,7 +147,8 @@
       return 440 * Math.pow(2, (midi - 69) / 12);
     }
 
-    function playChord(midiNotes, duration = 1.2) {
+    // Clean, warm, non-distorted harmonic synth
+    function playChord(midiNotes, duration = 1.4) {
       if (!midiNotes || !midiNotes.length) return;
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -156,13 +157,89 @@
       const now = audioCtx.currentTime;
 
       midiNotes.forEach((midi, index) => {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
+        const baseFreq = midiToFreq(midi);
+
+        // Fundamental + soft harmonics
+        const osc1 = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const osc3 = audioCtx.createOscillator();
+
+        osc1.type = "sine";
+        osc2.type = "sine";
+        osc3.type = "sine";
+
+        osc1.frequency.value = baseFreq;
+        osc2.frequency.value = baseFreq * 2;   // 2nd harmonic
+        osc3.frequency.value = baseFreq * 3;   // 3rd harmonic
+
+        const gain1 = audioCtx.createGain();
+        const gain2 = audioCtx.createGain();
+        const gain3 = audioCtx.createGain();
+
+        gain1.gain.value = 0.6;
+        gain2.gain.value = 0.25;
+        gain3.gain.value = 0.12;
+
         const filter = audioCtx.createBiquadFilter();
+        filter.type = "lowpass";
+        filter.frequency.value = 2600;
 
-        // Smooth, warm tone
-        osc.type = "triangle";
-        osc.frequency.value = midiToFreq(midi);
-        osc.detune.value = (Math.random() - 0.5) * 8; // ±4 cents
+        const env = audioCtx.createGain();
+        env.gain.setValueAtTime(0, now);
+        env.gain.linearRampToValueAtTime(0.32, now + 0.12);
+        env.gain.linearRampToValueAtTime(0.0, now + duration + 0.2);
 
-        // Gentle
+        osc1.connect(gain1);
+        osc2.connect(gain2);
+        osc3.connect(gain3);
+
+        gain1.connect(filter);
+        gain2.connect(filter);
+        gain3.connect(filter);
+
+        filter.connect(env);
+        env.connect(audioCtx.destination);
+
+        const offset = index * 0.012;
+
+        osc1.start(now + offset);
+        osc2.start(now + offset);
+        osc3.start(now + offset);
+
+        osc1.stop(now + duration + 0.3);
+        osc2.stop(now + duration + 0.3);
+        osc3.stop(now + duration + 0.3);
+      });
+    }
+
+    let currentNotes = null;
+
+    function init() {
+      if (!chordParam) return;
+
+      const parsed = parseChord(chordParam);
+      const notes = buildChordNotes(parsed);
+
+      if (!notes) {
+        statusEl.textContent = "Could not parse chord.";
+        errorEl.textContent = "Chord: " + chordParam;
+        playBtn.disabled = true;
+        return;
+      }
+
+      currentNotes = notes;
+      statusEl.textContent = "Click to play again.";
+      errorEl.textContent = "";
+      playBtn.disabled = false;
+
+      playChord(currentNotes);
+    }
+
+    playBtn.addEventListener("click", () => {
+      if (currentNotes) playChord(currentNotes);
+    });
+
+    init();
+  </script>
+</body>
+</html>
