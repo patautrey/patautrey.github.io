@@ -154,21 +154,33 @@
       }
 
       const now = audioCtx.currentTime;
+
       midiNotes.forEach((midi, index) => {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
+        const filter = audioCtx.createBiquadFilter();
+
+        // Tone
         osc.type = "sine";
         osc.frequency.value = midiToFreq(midi);
+        osc.detune.value = (Math.random() - 0.5) * 8; // ±4 cents
 
-        // Smooth, non-distorted envelope
+        // Filter
+        filter.type = "lowpass";
+        filter.frequency.value = 4200;
+
+        // Envelope
         gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(0.35, now + 0.08);   // softer attack + lower volume
-        gain.gain.linearRampToValueAtTime(0.0, now + duration + 0.1); // gentle release
+        gain.gain.linearRampToValueAtTime(0.35, now + 0.08);
+        gain.gain.linearRampToValueAtTime(0.0, now + duration + 0.1);
 
-        osc.connect(gain);
+        // Routing
+        osc.connect(filter);
+        filter.connect(gain);
         gain.connect(audioCtx.destination);
 
-        osc.start(now + index * 0.01);
+        // Slight stagger
+        osc.start(now + index * 0.015);
         osc.stop(now + duration + 0.2);
       });
     }
@@ -183,5 +195,26 @@
 
       if (!notes) {
         statusEl.textContent = "Could not parse chord.";
-        errorEl.textContent
+        errorEl.textContent = "Chord: " + chordParam;
+        playBtn.disabled = true;
+        return;
+      }
+
+      currentNotes = notes;
+      statusEl.textContent = "Click to play again.";
+      errorEl.textContent = "";
+      playBtn.disabled = false;
+
+      playChord(currentNotes);
+    }
+
+    playBtn.addEventListener("click", () => {
+      if (currentNotes) playChord(currentNotes);
+    });
+
+    init();
+  </script>
+</body>
+</html>
+
 
