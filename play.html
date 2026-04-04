@@ -41,7 +41,11 @@
       cursor: pointer;
       font-weight: 600;
     }
-    button:hover {
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    button:hover:enabled {
       background: #10ac84;
     }
     .error {
@@ -61,8 +65,10 @@
   </div>
 
   <script>
+    // --- URL params ---
     const params = new URLSearchParams(window.location.search);
     const chordParam = params.get("chord");
+    const instrumentParam = params.get("instrument") || "piano";
 
     const chordLabel = document.getElementById("chord-label");
     const statusEl = document.getElementById("status");
@@ -71,13 +77,15 @@
 
     if (!chordParam) {
       chordLabel.textContent = "No chord provided";
-      statusEl.textContent = "Add ?chord=Cmaj7 to the URL.";
-      errorEl.textContent = "";
+      statusEl.textContent = "Add ?chord=C, ?chord=Am, ?chord=G7, etc.";
       playBtn.disabled = true;
+    } else {
+      chordLabel.textContent = chordParam;
+      statusEl.textContent = "Tap to audition this chord.";
+      playBtn.disabled = false;
     }
 
-    chordLabel.textContent = chordParam || "Chord Player";
-
+    // --- Chord parsing ---
     function parseChord(chord) {
       const match = chord.match(/^([A-G](?:#|b)?)(.*)$/i);
       if (!match) return null;
@@ -141,26 +149,133 @@
       return intervals.map(i => rootMidi + i);
     }
 
+    // --- Audio ---
     let audioCtx = null;
 
     function midiToFreq(midi) {
       return 440 * Math.pow(2, (midi - 69) / 12);
     }
 
-    // ⭐ FM ELECTRIC PIANO WITH STRONGER ATTACK
-    function playChord(midiNotes, duration = 1.8) {
-      if (!midiNotes || !midiNotes.length) return;
-      if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      }
-
+    // --- Piano Voice (FM EP) ---
+    function playPiano(midiNotes, duration = 1.8) {
       const now = audioCtx.currentTime;
 
       midiNotes.forEach((midi, index) => {
         const carrierFreq = midiToFreq(midi);
 
-        // --- FM Operators ---
         const carrier = audioCtx.createOscillator();
-        const modulator = audioCtx.createOscillator();
+        carrier.type = "sine";
 
-        const modGain = audio
+        const modulator = audioCtx.createOscillator();
+        modulator.type = "sine";
+
+        const modGain = audioCtx.createGain();
+        modGain.gain.setValueAtTime(80, now);
+
+        const amp = audioCtx.createGain();
+        amp.gain.setValueAtTime(0.0, now);
+
+        const startTime = now + index * 0.01;
+        const endTime = startTime + duration;
+
+        amp.gain.linearRampToValueAtTime(0.9, startTime + 0.05);
+        amp.gain.linearRampToValueAtTime(0.7, startTime + 0.3);
+        amp.gain.linearRampToValueAtTime(0.0, endTime);
+
+        modulator.connect(modGain);
+        modGain.connect(carrier.frequency);
+
+        carrier.connect(amp);
+        amp.connect(audioCtx.destination);
+
+        carrier.frequency.setValueAtTime(carrierFreq, now);
+        modulator.frequency.setValueAtTime(carrierFreq * 2, now);
+
+        carrier.start(startTime);
+        modulator.start(startTime);
+        carrier.stop(endTime + 0.1);
+        modulator.stop(endTime + 0.1);
+      });
+    }
+
+    // --- Guitar Voice (Plucked string) ---
+    function playGuitar(midiNotes, duration = 2.2) {
+      const now = audioCtx.currentTime;
+
+      midiNotes.forEach((midi, index) => {
+        const freq = midiToFreq(midi);
+
+        const osc = audioCtx.createOscillator();
+        osc.type = "triangle";
+
+        const amp = audioCtx.createGain();
+        amp.gain.setValueAtTime(0.0, now);
+
+        const pluck = audioCtx.createGain();
+        pluck.gain.setValueAtTime(1.0, now);
+        pluck.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+
+        const startTime = now + index * 0.015;
+        const endTime = startTime + duration;
+
+        amp.gain.linearRampToValueAtTime(0.8, startTime + 0.02);
+        amp.gain.exponentialRampToValueAtTime(0.001, endTime);
+
+        osc.frequency.setValueAtTime(freq, now);
+        osc.detune.setValueAtTime((index - 1) * 3, now);
+
+        osc.connect(pluck);
+        pluck.connect(amp);
+        amp.connect(audioCtx.destination);
+
+        osc.start(startTime);
+        osc.stop(endTime + 0.1);
+      });
+    }
+
+    // --- Main click handler ---
+    playBtn.addEventListener("click", async () => {
+      if (!chordParam) return;
+
+      try {
+        errorEl.textContent = "";
+        statusEl.textContent = "Playing…";
+
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        if (audioCtx.state === "suspended") {
+          await audioCtx.resume();
+        }
+
+        const parsed = parseChord(chordParam);
+        const notes = buildChordNotes(parsed);
+
+        if (!notes || !notes.length) {
+          statusEl.textContent = "Could not parse chord.";
+          return;
+        }
+
+        if (instrumentParam === "guitar") {
+          playGuitar(notes);
+        } else {
+          playPiano(notes);
+        }
+
+        setTimeout(() => {
+          statusEl.textContent = "Tap to audition again.";
+        }, 500);
+
+      } catch (err) {
+        errorEl.textContent = "Audio error: " + err.message;
+        statusEl.textContent = "Error while playing chord.";
+      }
+    });
+
+    if (chordParam) {
+      statusEl.textContent = "Tap to audition this chord.";
+    }
+  </script>
+</body>
+</html>
