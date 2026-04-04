@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Chord Debugger</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    background: #0b1f26;
+    color: #f5f5f5;
+    padding: 20px;
+  }
+  .box {
+    background: #122b35;
+    padding: 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+  }
+  h2 { margin-top: 0; }
+  code { color: #1dd1a1; }
+</style>
+</head>
+
+<body>
+<h1>Chord Debugger</h1>
+
+<div class="box">
+  <h2>Input</h2>
+  <p><strong>Raw chordParam:</strong> <code id="raw"></code></p>
+</div>
+
+<div class="box">
+  <h2>Parsed</h2>
+  <p><strong>Root:</strong> <code id="root"></code></p>
+  <p><strong>Quality:</strong> <code id="quality"></code></p>
+  <p><strong>Bass Root:</strong> <code id="bass"></code></p>
+</div>
+
+<div class="box">
+  <h2>Intervals + MIDI</h2>
+  <p><strong>Intervals:</strong> <code id="intervals"></code></p>
+  <p><strong>MIDI Notes:</strong> <code id="midi"></code></p>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const chordParam = params.get("chord");
+
+document.getElementById("raw").textContent = chordParam;
+
+// --- same parsing logic as play.html (simplified) ---
+const ROOT_TO_SEMITONE = {
+  "C": 0, "B#": 0,
+  "C#": 1, "Db": 1,
+  "D": 2,
+  "D#": 3, "Eb": 3,
+  "E": 4, "Fb": 4,
+  "F": 5, "E#": 5,
+  "F#": 6, "Gb": 6,
+  "G": 7,
+  "G#": 8, "Ab": 8,
+  "A": 9,
+  "A#": 10, "Bb": 10,
+  "B": 11, "Cb": 11
+};
+
+function rootToMidi(root, octave = 4) {
+  const semitone = ROOT_TO_SEMITONE[root.toUpperCase()];
+  if (semitone === undefined) return null;
+  return 12 * (octave + 1) + semitone;
+}
+
+function normalizeQuality(q) {
+  if (!q) return "";
+  return q
+    .replace(/♭/g, "b")
+    .replace(/♯/g, "#")
+    .replace(/–/g, "-")
+    .trim()
+    .toLowerCase();
+}
+
+function parseSimpleChord(chord) {
+  const match = chord.match(/^([A-G](?:#|b)?)(.*)$/i);
+  if (!match) return null;
+  return {
+    root: match[1],
+    quality: normalizeQuality(match[2] || "")
+  };
+}
+
+function parseChord(chord) {
+  let main = chord;
+  let bassRoot = null;
+
+  const slashIndex = chord.indexOf("/");
+  if (slashIndex !== -1) {
+    main = chord.slice(0, slashIndex).trim();
+    const bassPart = chord.slice(slashIndex + 1).trim();
+    const m = bassPart.match(/^([A-G](?:#|b)?)/i);
+    if (m) bassRoot = m[1];
+  }
+
+  const parsedMain = parseSimpleChord(main);
+  if (!parsedMain) return null;
+
+  return { root: parsedMain.root, quality: parsedMain.quality, bassRoot };
+}
+
+function buildChordIntervals(quality) {
+  if (quality === "" || quality === "maj") return [0,4,7];
+  if (quality === "m") return [0,3,7];
+  if (quality === "7") return [0,4,7,10];
+  return [0,4,7]; // fallback
+}
+
+function buildChordNotes(parsed) {
+  if (!parsed) return null;
+  const rootMidi = rootToMidi(parsed.root, 4);
+  if (rootMidi == null) return null;
+
+  const intervals = buildChordIntervals(parsed.quality);
+  const notes = intervals.map(i => rootMidi + i);
+
+  return { intervals, notes };
+}
+
+// --- run ---
+const parsed = parseChord(chordParam || "");
+const built = parsed ? buildChordNotes(parsed) : null;
+
+document.getElementById("root").textContent = parsed?.root || "(null)";
+document.getElementById("quality").textContent = parsed?.quality || "(null)";
+document.getElementById("bass").textContent = parsed?.bassRoot || "(none)";
+document.getElementById("intervals").textContent = built?.intervals || "(null)";
+document.getElementById("midi").textContent = built?.notes || "(null)";
+</script>
+
+</body>
+</html>
