@@ -201,4 +201,249 @@
 
       if (quality === "7b5b13") return [0, 4, 6, 10, 20];
       if (quality === "7b5#11") return [0, 4, 6, 10, 18];
-      if (quality === "7#5b13") return
+      if (quality === "7#5b13") return [0, 4, 8, 10, 20];
+      if (quality === "7#5#11") return [0, 4, 8, 10, 18];
+
+      if (quality === "7b9#11") return [0, 4, 7, 10, 13, 18];
+      if (quality === "7#9#11") return [0, 4, 7, 10, 15, 18];
+      if (quality === "7b9b5") return [0, 4, 6, 10, 13];
+      if (quality === "7b9#5") return [0, 4, 8, 10, 13];
+      if (quality === "7#9b5") return [0, 4, 6, 10, 15];
+      if (quality === "7#9#5") return [0, 4, 8, 10, 15];
+
+      if (quality === "7alt") return [0, 4, 6, 8, 10, 13, 15];
+
+      return [0, 4, 7];
+    }
+      return [0, 4, 7];
+    }
+
+    function buildChordNotes(parsed) {
+      if (!parsed) return null;
+      const { root, quality, bassRoot } = parsed;
+
+      const rootMidi = rootToMidi(root, 4);
+      if (rootMidi == null) return null;
+
+      const intervals = buildChordIntervals(quality);
+      const chordNotes = intervals.map(i => rootMidi + i);
+
+      if (bassRoot) {
+        const bassMidiBase = rootToMidi(bassRoot, 2);
+        if (bassMidiBase == null) return chordNotes;
+
+        let bassMidi = bassMidiBase;
+        const minChord = Math.min(...chordNotes);
+        while (bassMidi > minChord - 10) bassMidi -= 12;
+
+        return [bassMidi, ...chordNotes];
+      }
+
+      return chordNotes;
+    }
+
+    function mapToGuitarVoicing(midiNotes) {
+      if (!midiNotes || !midiNotes.length) return midiNotes;
+
+      let tones = midiNotes.slice().sort((a, b) => a - b);
+
+      let hasBass = false;
+      if (tones.length >= 4 && (tones[1] - tones[0]) > 10) {
+        hasBass = true;
+      }
+
+      const bassStringRoot = 40;
+      const upperStringRoots = [52, 57, 62, 67];
+      const minFret = 3;
+      const maxFret = 9;
+
+      if (hasBass) {
+        const bassNote = tones[0];
+        const upperTones = tones.slice(1);
+
+        let bassTarget = bassNote;
+        while (bassTarget < bassStringRoot + minFret) bassTarget += 12;
+        while (bassTarget > bassStringRoot + maxFret) bassTarget -= 12;
+
+        let voicing;
+        if (upperTones.length === 3) {
+          voicing = [upperTones[0], upperTones[1] + 12, upperTones[2] + 12];
+        } else if (upperTones.length >= 4) {
+          voicing = [upperTones[1], upperTones[2], upperTones[3], upperTones[0] + 12];
+        } else {
+          voicing = upperTones.slice();
+        }
+
+        let mappedUpper = voicing.map((note, i) => {
+          const stringRoot = upperStringRoots[i % upperStringRoots.length];
+          let target = note;
+          while (target < stringRoot + minFret) target += 12;
+          while (target > stringRoot + maxFret) target -= 12;
+          return target;
+        });
+
+        return [bassTarget, ...mappedUpper];
+      } else {
+        const stringRoots = [52, 57, 62, 67];
+
+        let tonesSorted = tones;
+        let voicing;
+        if (tonesSorted.length === 3) {
+          voicing = [tonesSorted[0], tonesSorted[1] + 12, tonesSorted[2] + 12];
+        } else if (tonesSorted.length === 4) {
+          voicing = [tonesSorted[1], tonesSorted[2], tonesSorted[3], tonesSorted[0] + 12];
+        } else {
+          voicing = [
+            tonesSorted[2] || tonesSorted[0],
+            tonesSorted[3] || tonesSorted[1] || tonesSorted[0] + 4,
+            tonesSorted[0] + 12,
+            tonesSorted[1] + 12 || tonesSorted[0] + 16
+          ];
+        }
+
+        let mapped = voicing.map((note, i) => {
+          const stringRoot = stringRoots[i % stringRoots.length];
+          let target = note;
+          while (target < stringRoot + minFret) target += 12;
+          while (target > stringRoot + maxFret) target -= 12;
+          return target;
+        });
+
+        return mapped;
+      }
+    }
+
+    let audioCtx = null;
+    let reverbNode = null;
+
+    function midiToFreq(midi) {
+      return 440 * Math.pow(2, (midi - 69) / 12);
+    }
+
+    function createSimpleReverb(ctx) {
+      const input = ctx.createGain();
+      const output = ctx.createGain();
+      const delay = ctx.createDelay();
+      const feedback = ctx.createGain();
+      const tone = ctx.createBiquadFilter();
+
+      delay.delayTime.value = 0.12;
+      feedback.gain.value = 0.35;
+      tone.type = "lowpass";
+      tone.frequency.value = 4000;
+
+      input.connect(delay);
+      delay.connect(tone);
+      tone.connect(feedback);
+      feedback.connect(delay);
+      tone.connect(output);
+
+      return { input, output };
+    }
+
+    function ensureReverb() {
+      if (!reverbNode && audioCtx) {
+        const rv = createSimpleReverb(audioCtx);
+        rv.output.connect(audioCtx.destination);
+        reverbNode = rv;
+      }
+    }
+
+    function playPiano(midiNotes, duration = 1.8) {
+      const now = audioCtx.currentTime;
+
+      midiNotes.forEach((midi, index) => {
+        const carrierFreq = midiToFreq(midi);
+
+        const carrier = audioCtx.createOscillator();
+        carrier.type = "sine";
+
+        const modulator = audioCtx.createOscillator();
+        modulator.type = "sine";
+
+        const modGain = audioCtx.createGain();
+        modGain.gain.setValueAtTime(80, now);
+
+        const amp = audioCtx.createGain();
+        amp.gain.setValueAtTime(0.0, now);
+
+        const startTime = now + index * 0.01;
+        const endTime = startTime + duration;
+
+        amp.gain.linearRampToValueAtTime(0.9, startTime + 0.05);
+        amp.gain.linearRampToValueAtTime(0.7, startTime + 0.3);
+        amp.gain.linearRampToValueAtTime(0.0, endTime);
+
+        modulator.connect(modGain);
+        modGain.connect(carrier.frequency);
+
+        carrier.connect(amp);
+        amp.connect(audioCtx.destination);
+
+        carrier.frequency.setValueAtTime(carrierFreq, now);
+        modulator.frequency.setValueAtTime(carrierFreq * 2, now);
+
+        carrier.start(startTime);
+        modulator.start(startTime);
+        carrier.stop(endTime + 0.1);
+        modulator.stop(endTime + 0.1);
+      });
+    }
+
+    function playGuitar(midiNotes, duration = 2.2) {
+      ensureReverb();
+      const now = audioCtx.currentTime;
+      const voiced = mapToGuitarVoicing(midiNotes);
+
+      let notes = voiced.map((m, i) => ({ midi: m, index: i }));
+      if (strumParam === "up") notes.reverse();
+
+      const baseStrumGap = (strumParam === "block") ? 0.0 : 0.02;
+
+      notes.forEach((noteObj, orderIndex) => {
+        const midi = noteObj.midi;
+        const freq = midiToFreq(midi);
+
+        const osc = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const amp = audioCtx.createGain();
+        const body = audioCtx.createBiquadFilter();
+        const pick = audioCtx.createGain();
+
+        let bodyFreq = 2500;
+        let bodyQ = 0.7;
+        let baseGain = 0.8;
+        let decayTime = duration;
+        let reverbSend = 0.4;
+
+        if (gtrStyleParam === "nylon") {
+          bodyFreq = 1800;
+          bodyQ = 0.9;
+          baseGain = 0.7;
+          decayTime = duration * 1.2;
+          reverbSend = 0.35;
+        } else if (gtrStyleParam === "jazz") {
+          bodyFreq = 1200;
+          bodyQ = 1.0;
+          baseGain = 0.75;
+          decayTime = duration * 1.1;
+          reverbSend = 0.25;
+        } else if (gtrStyleParam === "ambient") {
+          bodyFreq = 3000;
+          bodyQ = 0.5;
+          baseGain = 0.6;
+          decayTime = duration * 1.8;
+          reverbSend = 0.6;
+        }
+
+        osc.type = "triangle";
+        osc2.type = "sine";
+
+        const startTime = now + orderIndex * baseStrumGap;
+        const endTime = startTime + decayTime;
+
+        amp.gain.setValueAtTime(0.0, now);
+        amp.gain.linearRampToValueAtTime(baseGain, startTime + 0.02);
+        amp.gain.exponentialRampToValueAtTime(0.001, endTime);
+
+        pick.gain.setValueAtTime(1.0, startTime);
