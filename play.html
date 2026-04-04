@@ -103,7 +103,13 @@
       "B": 11, "Cb": 11
     };
 
-    function parseChord(chord) {
+    function rootToMidi(root, octave = 4) {
+      const semitone = ROOT_TO_SEMITONE[root.toUpperCase()];
+      if (semitone === undefined) return null;
+      return 12 * (octave + 1) + semitone;
+    }
+
+    function parseSimpleChord(chord) {
       const match = chord.match(/^([A-G](?:#|b)?)(.*)$/i);
       if (!match) return null;
       const root = match[1];
@@ -111,15 +117,27 @@
       return { root, quality };
     }
 
-    function rootToMidi(root, octave = 4) {
-      const semitone = ROOT_TO_SEMITONE[root.toUpperCase()];
-      if (semitone === undefined) return null;
-      return 12 * (octave + 1) + semitone;
+    // Literal slash-chord parsing: RootQuality/BassRoot
+    function parseChord(chord) {
+      let main = chord;
+      let bassRoot = null;
+
+      const slashIndex = chord.indexOf("/");
+      if (slashIndex !== -1) {
+        main = chord.slice(0, slashIndex).trim();
+        const bassPart = chord.slice(slashIndex + 1).trim();
+        const m = bassPart.match(/^([A-G](?:#|b)?)/i);
+        if (m) bassRoot = m[1];
+      }
+
+      const parsedMain = parseSimpleChord(main);
+      if (!parsedMain) return null;
+      return { root: parsedMain.root, quality: parsedMain.quality, bassRoot };
     }
 
     // Expanded chord interval builder
     function buildChordIntervals(quality) {
-      // Base defaults
+      // Base triads
       if (quality === "" || quality === "maj" || quality === "major") {
         return [0, 4, 7];
       }
@@ -194,41 +212,98 @@
 
     function buildChordNotes(parsed) {
       if (!parsed) return null;
-      const { root, quality } = parsed;
+      const { root, quality, bassRoot } = parsed;
+
       const rootMidi = rootToMidi(root, 4);
       if (rootMidi == null) return null;
+
       const intervals = buildChordIntervals(quality);
-      return intervals.map(i => rootMidi + i);
+      const chordNotes = intervals.map(i => rootMidi + i);
+
+      // Literal slash-chord bass handling
+      if (bassRoot) {
+        // Put bass clearly below the chord
+        const bassMidiBase = rootToMidi(bassRoot, 2); // octave 2
+        if (bassMidiBase == null) return chordNotes;
+
+        let bassMidi = bassMidiBase;
+        const minChord = Math.min(...chordNotes);
+        // Ensure bass is at least a 10th below the lowest chord tone
+        while (bassMidi > minChord - 10) bassMidi -= 12;
+
+        return [bassMidi, ...chordNotes];
+      }
+
+      return chordNotes;
     }
 
-    // --- Guitar voicing engine (drop-style, guitar range) ---
+    // --- Guitar voicing engine (drop-style, guitar range, with bass awareness) ---
     function mapToGuitarVoicing(midiNotes) {
       if (!midiNotes || !midiNotes.length) return midiNotes;
 
       let tones = midiNotes.slice().sort((a, b) => a - b);
 
-      const stringRoots = [52, 57, 62, 67]; // A2, D3, G3, B3
+      // Detect if we have a dedicated bass (from slash chord) by large gap
+      let hasBass = false;
+      if (tones.length >= 4 && (tones[1] - tones[0]) > 10) {
+        hasBass = true;
+      }
+
+      const bassStringRoot = 40; // E2
+      const upperStringRoots = [52, 57, 62, 67]; // A2, D3, G3, B3
       const minFret = 3;
       const maxFret = 9;
 
-      let voicing;
-      if (tones.length === 3) {
-        voicing = [tones[0], tones[1] + 12, tones[2] + 12];
-      } else if (tones.length === 4) {
-        voicing = [tones[1], tones[2], tones[3], tones[0] + 12];
+      if (hasBass) {
+        const bassNote = tones[0];
+        const upperTones = tones.slice(1);
+
+        // Map bass to low E region
+        let bassTarget = bassNote;
+        while (bassTarget < bassStringRoot + minFret) bassTarget += 12;
+        while (bassTarget > bassStringRoot + maxFret) bassTarget -= 12;
+
+        let voicing;
+        if (upperTones.length === 3) {
+          voicing = [upperTones[0], upperTones[1] + 12, upperTones[2] + 12];
+        } else if (upperTones.length >= 4) {
+          voicing = [upperTones[1], upperTones[2], upperTones[3], upperTones[0] + 12];
+        } else {
+          voicing = upperTones.slice();
+        }
+
+        let mappedUpper = voicing.map((note, i) => {
+          const stringRoot = upperStringRoots[i % upperStringRoots.length];
+          let target = note;
+          while (target < stringRoot + minFret) target += 12;
+          while (target > stringRoot + maxFret) target -= 12;
+          return target;
+        });
+
+        return [bassTarget, ...mappedUpper];
       } else {
-        voicing = [tones[2] || tones[0], tones[3] || tones[1] || tones[0] + 4, tones[0] + 12, tones[1] + 12 || tones[0] + 16];
+        // Original 4-string voicing behavior
+        const stringRoots = [52, 57, 62, 67]; // A2, D3, G3, B3
+
+        let voicing;
+        if (tones.length === 3) {
+          voicing = [tones[0], tones[1] + 12, tones[2] + 12];
+        } else if (tones.length === 4) {
+          voicing = [tones[1], tones[2], tones[3], tones[0] + 12];
+        } else {
+          voicing = [tones[2] || tones[0], tones[3] || tones[1] || tones[0] + 4, tones[0] + 12, tones[1] + 12 || tones[0] + 16];
+        }
+
+        let mapped = voicing.map((note, i) => {
+          const stringRoot = stringRoots[i % stringRoots.length];
+          let target = note;
+          while (target < stringRoot + minFret) target += 12;
+          while (target > stringRoot + maxFret) target -= 12;
+          return target;
+        });
+
+        return mapped;
       }
-
-      let mapped = voicing.map((note, i) => {
-        const stringRoot = stringRoots[i % stringRoots.length];
-        let target = note;
-        while (target < stringRoot + minFret) target += 12;
-        while (target > stringRoot + maxFret) target -= 12;
-        return target;
-      });
-
-      return mapped;
     }
 
     // --- Audio ---
