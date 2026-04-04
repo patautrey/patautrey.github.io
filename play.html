@@ -69,6 +69,8 @@
     const params = new URLSearchParams(window.location.search);
     const chordParam = params.get("chord");
     const instrumentParam = (params.get("instrument") || "piano").toLowerCase();
+    const gtrStyleParam = (params.get("gtr_style") || "steel").toLowerCase(); // steel, nylon, jazz, ambient
+    const strumParam = (params.get("strum") || "down").toLowerCase(); // down, up, block
 
     const chordLabel = document.getElementById("chord-label");
     const statusEl = document.getElementById("status");
@@ -152,11 +154,10 @@
       return intervals.map(i => rootMidi + i);
     }
 
-    // --- Realistic Guitar Voicing Engine (Drop-2 / Drop-3 style) ---
+    // --- Guitar voicing engine (drop-style, guitar range) ---
     function mapToGuitarVoicing(midiNotes) {
       if (!midiNotes || !midiNotes.length) return midiNotes;
 
-      // Sort chord tones low → high
       let tones = midiNotes.slice().sort((a, b) => a - b);
 
       // Guitar sweet spot: frets 3–9 on strings 5–2
@@ -169,22 +170,18 @@
         // Spread triad
         voicing = [tones[0], tones[1] + 12, tones[2] + 12];
       } else if (tones.length === 4) {
-        // Drop-2 voicing
+        // Drop-2
         voicing = [tones[1], tones[2], tones[3], tones[0] + 12];
       } else {
-        // Drop-3 style fallback
+        // Drop-3-ish fallback
         voicing = [tones[2], tones[3] || tones[2] + 4, tones[0] + 12, tones[1] + 12];
       }
 
-      // Map to guitar string set (strings 5–2)
       let mapped = voicing.map((note, i) => {
         const stringRoot = stringRoots[i % stringRoots.length];
         let target = note;
-
-        // Shift into playable fret range
         while (target < stringRoot + minFret) target += 12;
         while (target > stringRoot + maxFret) target -= 12;
-
         return target;
       });
 
@@ -193,9 +190,39 @@
 
     // --- Audio ---
     let audioCtx = null;
+    let reverbNode = null;
 
     function midiToFreq(midi) {
       return 440 * Math.pow(2, (midi - 69) / 12);
+    }
+
+    function createSimpleReverb(ctx) {
+      const input = ctx.createGain();
+      const output = ctx.createGain();
+      const delay = ctx.createDelay();
+      const feedback = ctx.createGain();
+      const tone = ctx.createBiquadFilter();
+
+      delay.delayTime.value = 0.12;
+      feedback.gain.value = 0.35;
+      tone.type = "lowpass";
+      tone.frequency.value = 4000;
+
+      input.connect(delay);
+      delay.connect(tone);
+      tone.connect(feedback);
+      feedback.connect(delay);
+      tone.connect(output);
+
+      return { input, output };
+    }
+
+    function ensureReverb() {
+      if (!reverbNode && audioCtx) {
+        const rv = createSimpleReverb(audioCtx);
+        rv.output.connect(audioCtx.destination);
+        reverbNode = rv;
+      }
     }
 
     // --- Piano Voice (FM EP) ---
@@ -240,28 +267,159 @@
       });
     }
 
-    // --- Guitar Voice (plucked, with voicing engine) ---
+    // --- Guitar Voice ---
     function playGuitar(midiNotes, duration = 2.2) {
+      ensureReverb();
       const now = audioCtx.currentTime;
       const voiced = mapToGuitarVoicing(midiNotes);
 
-      voiced.forEach((midi, index) => {
+      // Strum timing
+      let notes = voiced.map((m, i) => ({ midi: m, index: i }));
+      if (strumParam === "up") {
+        notes.reverse();
+      }
+
+      const baseStrumGap = (strumParam === "block") ? 0.0 : 0.02;
+
+      notes.forEach((noteObj, orderIndex) => {
+        const midi = noteObj.midi;
         const freq = midiToFreq(midi);
 
         const osc = audioCtx.createOscillator();
-        osc.type = "triangle";
-
+        const osc2 = audioCtx.createOscillator();
         const amp = audioCtx.createGain();
+        const body = audioCtx.createBiquadFilter();
+        const pick = audioCtx.createGain();
+
+        // Style shaping
+        let bodyFreq = 2500;
+        let bodyQ = 0.7;
+        let baseGain = 0.8;
+        let decayTime = duration;
+        let reverbSend = 0.4;
+
+        if (gtrStyleParam === "nylon") {
+          bodyFreq = 1800;
+          bodyQ = 0.9;
+          baseGain = 0.7;
+          decayTime = duration * 1.2;
+          reverbSend = 0.35;
+        } else if (gtrStyleParam === "jazz") {
+          bodyFreq = 1200;
+          bodyQ = 1.0;
+          baseGain = 0.75;
+          decayTime = duration * 1.1;
+          reverbSend = 0.25;
+        } else if (gtrStyleParam === "ambient") {
+          bodyFreq = 3000;
+          bodyQ = 0.5;
+          baseGain = 0.6;
+          decayTime = duration * 1.8;
+          reverbSend = 0.6;
+        }
+
+        osc.type = "triangle";
+        osc2.type = "sine";
+
+        const startTime = now + orderIndex * baseStrumGap;
+        const endTime = startTime + decayTime;
+
         amp.gain.setValueAtTime(0.0, now);
-
-        const pluck = audioCtx.createGain();
-        pluck.gain.setValueAtTime(1.0, now);
-        pluck.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
-
-        const startTime = now + index * 0.015;
-        const endTime = startTime + duration;
-
-        amp.gain.linearRampToValueAtTime(0.8, startTime + 0.02);
+        amp.gain.linearRampToValueAtTime(baseGain, startTime + 0.02);
         amp.gain.exponentialRampToValueAtTime(0.001, endTime);
 
-        osc.frequency.setValueAtTime(freq
+        pick.gain.setValueAtTime(1.0, startTime);
+        pick.gain.exponentialRampToValueAtTime(0.001, startTime + 0.03);
+
+        body.type = "bandpass";
+        body.frequency.setValueAtTime(bodyFreq, now);
+        body.Q.setValueAtTime(bodyQ, now);
+
+        osc.frequency.setValueAtTime(freq, now);
+        osc2.frequency.setValueAtTime(freq * 2, now);
+        osc.detune.setValueAtTime((noteObj.index - 1) * 3, now);
+
+        const noise = audioCtx.createBufferSource();
+        const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.05, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < data.length; i++) {
+          data[i] = (Math.random() * 2 - 1) * 0.4;
+        }
+        noise.buffer = buffer;
+
+        const noiseGain = audioCtx.createGain();
+        noiseGain.gain.setValueAtTime(0.6, startTime);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.03);
+
+        osc.connect(body);
+        osc2.connect(body);
+        noise.connect(noiseGain);
+        noiseGain.connect(body);
+
+        body.connect(pick);
+        pick.connect(amp);
+
+        amp.connect(audioCtx.destination);
+        if (reverbNode) {
+          const send = audioCtx.createGain();
+          send.gain.setValueAtTime(reverbSend, now);
+          amp.connect(send);
+          send.connect(reverbNode.input);
+        }
+
+        osc.start(startTime);
+        osc2.start(startTime);
+        noise.start(startTime);
+
+        osc.stop(endTime + 0.1);
+        osc2.stop(endTime + 0.1);
+        noise.stop(startTime + 0.08);
+      });
+    }
+
+    // --- Main click handler ---
+    playBtn.addEventListener("click", async () => {
+      if (!chordParam) return;
+
+      try {
+        errorEl.textContent = "";
+        statusEl.textContent = "Playing…";
+
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        if (audioCtx.state === "suspended") {
+          await audioCtx.resume();
+        }
+
+        const parsed = parseChord(chordParam);
+        const notes = buildChordNotes(parsed);
+
+        if (!notes || !notes.length) {
+          statusEl.textContent = "Could not parse chord.";
+          return;
+        }
+
+        if (instrumentParam === "guitar") {
+          playGuitar(notes);
+        } else {
+          playPiano(notes);
+        }
+
+        setTimeout(() => {
+          statusEl.textContent = "Tap to audition again.";
+        }, 500);
+
+      } catch (err) {
+        errorEl.textContent = "Audio error: " + err.message;
+        statusEl.textContent = "Error while playing chord.";
+      }
+    });
+
+    if (chordParam) {
+      statusEl.textContent = "Tap to audition this chord.";
+    }
+  </script>
+</body>
+</html>
