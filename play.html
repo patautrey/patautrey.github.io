@@ -68,7 +68,7 @@
     // --- URL params ---
     const params = new URLSearchParams(window.location.search);
     const chordParam = params.get("chord");
-    const instrumentParam = params.get("instrument") || "piano";
+    const instrumentParam = (params.get("instrument") || "piano").toLowerCase();
 
     const chordLabel = document.getElementById("chord-label");
     const statusEl = document.getElementById("status");
@@ -115,12 +115,7 @@
       return 12 * (octave + 1) + semitone;
     }
 
-    function buildChordNotes(parsed) {
-      if (!parsed) return null;
-      const { root, quality } = parsed;
-      const rootMidi = rootToMidi(root, 4);
-      if (rootMidi == null) return null;
-
+    function buildChordIntervals(quality) {
       let intervals;
       if (quality === "" || quality === "maj" || quality === "major") {
         intervals = [0, 4, 7];
@@ -145,8 +140,51 @@
       } else {
         intervals = [0, 4, 7];
       }
+      return intervals;
+    }
 
+    function buildChordNotes(parsed) {
+      if (!parsed) return null;
+      const { root, quality } = parsed;
+      const rootMidi = rootToMidi(root, 4);
+      if (rootMidi == null) return null;
+      const intervals = buildChordIntervals(quality);
       return intervals.map(i => rootMidi + i);
+    }
+
+    // --- Guitar voicing helper ---
+    // Simple voicing mapper: keep notes in a realistic guitar range and spread them.
+    function mapToGuitarVoicing(midiNotes) {
+      if (!midiNotes || !midiNotes.length) return midiNotes;
+
+      // Rough guitar range: E2 (40) to D5 (74)
+      const minGtr = 40;
+      const maxGtr = 74;
+
+      // Start by centering around ~A3–D4 region
+      let voiced = midiNotes.slice().sort((a, b) => a - b);
+
+      // Shift everything into range by octaves
+      voiced = voiced.map(n => {
+        while (n < minGtr) n += 12;
+        while (n > maxGtr) n -= 12;
+        return n;
+      });
+
+      // Spread upper voices slightly upward for more open voicing
+      for (let i = 1; i < voiced.length; i++) {
+        if (voiced[i] - voiced[i - 1] < 3) {
+          voiced[i] += 12;
+        }
+      }
+
+      // Re‑clamp if something jumped too high
+      voiced = voiced.map(n => {
+        while (n > maxGtr) n -= 12;
+        return n;
+      });
+
+      return voiced;
     }
 
     // --- Audio ---
@@ -198,11 +236,12 @@
       });
     }
 
-    // --- Guitar Voice (Plucked string) ---
+    // --- Guitar Voice (plucked, spread voicing) ---
     function playGuitar(midiNotes, duration = 2.2) {
       const now = audioCtx.currentTime;
+      const voiced = mapToGuitarVoicing(midiNotes);
 
-      midiNotes.forEach((midi, index) => {
+      voiced.forEach((midi, index) => {
         const freq = midiToFreq(midi);
 
         const osc = audioCtx.createOscillator();
