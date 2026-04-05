@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Chord Player</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    background: #0b1f26;
+    color: #f5f5f5;
+    margin: 0;
+    padding: 20px;
+    text-align: center;
+  }
+  h1 {
+    font-size: 2.4rem;
+    margin-bottom: 10px;
+  }
+  #status {
+    margin-top: 10px;
+    font-size: 1.1rem;
+    opacity: 0.9;
+  }
+  #error {
+    margin-top: 10px;
+    color: #ff6b6b;
+    font-weight: bold;
+  }
+  #playBtn {
+    margin-top: 30px;
+    padding: 18px 32px;
+    font-size: 1.4rem;
+    border: none;
+    border-radius: 12px;
+    background: #1dd1a1;
+    color: #00332a;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+  #playBtn:disabled {
+    background: #145f4d;
+    cursor: not-allowed;
+  }
+</style>
+</head>
+
+<body>
+<h1 id="chordLabel">Chord Player</h1>
+<div id="status">Loading chord…</div>
+<div id="error"></div>
+<button id="playBtn" disabled>Play Again</button>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const chordParam = params.get("chord");
+const instrumentParam = params.get("instrument") || "piano";
+const strumParam = params.get("strum") || "block";
+const gtrStyleParam = params.get("style") || "steel";
+
+const chordLabel = document.getElementById("chordLabel");
+const statusEl = document.getElementById("status");
+const errorEl = document.getElementById("error");
+const playBtn = document.getElementById("playBtn");
+
+if (!chordParam) {
+  chordLabel.textContent = "No chord provided";
+  statusEl.textContent = "Add ?chord=C, ?chord=Am, ?chord=G7, etc.";
+  playBtn.disabled = true;
+} else {
+  chordLabel.textContent = chordParam;
+  statusEl.textContent = "Tap to audition this chord.";
+  playBtn.disabled = false;
+}
+
+const ROOT_TO_SEMITONE = {
+  "C": 0, "B#": 0,
+  "C#": 1, "Db": 1,
+  "D": 2,
+  "D#": 3, "Eb": 3,
+  "E": 4, "Fb": 4,
+  "F": 5, "E#": 5,
+  "F#": 6, "Gb": 6,
+  "G": 7,
+  "G#": 8, "Ab": 8,
+  "A": 9,
+  "A#": 10, "Bb": 10,
+  "B": 11, "Cb": 11
+};
+
+function rootToMidi(root, octave = 4) {
+  const semitone = ROOT_TO_SEMITONE[root.toUpperCase()];
+  if (semitone === undefined) return null;
+  return 12 * (octave + 1) + semitone;
+}
+
+function normalizeQuality(q) {
+  if (!q) return "";
+  return q
+    .replace(/♭/g, "b")
+    .replace(/♯/g, "#")
+    .replace(/–/g, "-")
+    .trim()
+    .toLowerCase();
+}
+
+function parseSimpleChord(chord) {
+  const match = chord.match(/^([A-G](?:#|b)?)(.*)$/i);
+  if (!match) return null;
+  return {
+    root: match[1],
+    quality: normalizeQuality(match[2] || "")
+  };
+}
+
+function parseChord(chord) {
+  let main = chord;
+  let bassRoot = null;
+
+  const slashIndex = chord.indexOf("/");
+  if (slashIndex !== -1) {
+    main = chord.slice(0, slashIndex).trim();
+    const bassPart = chord.slice(slashIndex + 1).trim();
+    const m = bassPart.match(/^([A-G](?:#|b)?)/i);
+    if (m) bassRoot = m[1];
+  }
+
+  const parsedMain = parseSimpleChord(main);
+  if (!parsedMain) return null;
+
+  return { root: parsedMain.root, quality: parsedMain.quality, bassRoot };
+}
+
+function buildChordIntervals(quality) {
+  if (quality === "" || quality === "maj") return [0,4,7];
+  if (quality === "m") return [0,3,7];
+  if (quality === "7") return [0,4,7,10];
+  return [0,4,7];
+}
+
+function buildChordNotes(parsed) {
+  if (!parsed) return null;
+  const rootMidi = rootToMidi(parsed.root, 4);
+  if (rootMidi == null) return null;
+
+  const intervals = buildChordIntervals(parsed.quality);
+  const notes = intervals.map(i => rootMidi + i);
+
+  if (parsed.bassRoot) {
+    const bassMidi = rootToMidi(parsed.bassRoot, 2);
+    if (bassMidi != null) notes.unshift(bassMidi);
+  }
+
+  return notes;
+}
+// ----------------------
+// AUDIO ENGINE
+// ----------------------
+let audioCtx = null;
+
+function ensureAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return audioCtx;
+}
+
+// ----------------------
+// PIANO SYNTH
+// ----------------------
+function playPianoChord(notes) {
+  const ctx = ensureAudio();
+  const now = ctx.currentTime;
+
+  notes.forEach((midi, i) => {
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+
+    const freq = 440 * Math.pow(2, (midi - 69) / 12);
+    osc.frequency.value = freq;
+
+    amp.gain.setValueAtTime(0, now);
+    amp.gain.linearRampToValueAtTime(0.7, now + 0.03);
+    amp.gain.linearRampToValueAtTime(0.0, now + 1.2);
+
+    osc.connect(amp).connect(ctx.destination);
+    osc.start(now + i * 0.002);
+    osc.stop(now + 1.3);
+  });
+}
+
+// ----------------------
+// GUITAR STRUMMER
+// ----------------------
+function playGuitarChord(notes, style = "steel", strum = "down") {
+  const ctx = ensureAudio();
+  const now = ctx.currentTime;
+
+  const delay = (strum === "down") ? 0.03 : -0.03;
+
+  notes.forEach((midi, i) => {
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+
+    const freq = 440 * Math.pow(2, (midi - 69) / 12);
+    osc.frequency.value = freq;
+
+    amp.gain.setValueAtTime(0, now);
+    amp.gain.linearRampToValueAtTime(0.9, now + 0.02);
+    amp.gain.linearRampToValueAtTime(0.0, now + 1.0);
+
+    osc.connect(amp).connect(ctx.destination);
+
+    const t = now + i * delay;
+    osc.start(t);
+    osc.stop(t + 1.1);
+  });
+}
+
+// ----------------------
+// MASTER PLAY FUNCTION
+// ----------------------
+function playChord() {
+  errorEl.textContent = "";
+
+  const parsed = parseChord(chordParam);
+  if (!parsed) {
+    errorEl.textContent = "Could not parse chord.";
+    return;
+  }
+
+  const notes = buildChordNotes(parsed);
+  if (!notes || notes.length === 0) {
+    errorEl.textContent = "No playable notes.";
+    return;
+  }
+
+  if (instrumentParam === "guitar") {
+    playGuitarChord(notes, gtrStyleParam, strumParam);
+  } else {
+    playPianoChord(notes);
+  }
+}
+// ----------------------
+// BUTTON HANDLER
+// ----------------------
+playBtn.addEventListener("click", () => {
+  if (playBtn.disabled) return;
+  playChord();
+});
+
+// ----------------------
+// AUTO‑PLAY ON LOAD
+// ----------------------
+window.addEventListener("load", () => {
+  if (!chordParam) return;
+
+  // Small delay so UI paints first
+  setTimeout(() => {
+    playChord();
+  }, 150);
+});
+</script>
+
+</body>
+</html>
+<!--
+OPTIONAL ENHANCEMENTS (not active yet)
+--------------------------------------
+You can add these later if you want:
+
+1. ?instrument=guitar
+2. ?strum=up or ?strum=down
+3. ?style=nylon or ?style=steel
+
+Examples:
+play2.html?chord=Am7&instrument=guitar&strum=down
+play2.html?chord=G/B&instrument=piano
+play2.html?chord=Fmaj7&instrument=guitar&style=nylon
+-->
