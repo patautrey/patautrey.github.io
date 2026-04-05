@@ -1,124 +1,96 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Yamaha C7 – Short Test Tones</title>
+<meta charset="UTF-8">
+<title>Chromatic Chord Engine</title>
 <style>
     body {
+        font-family: Arial, sans-serif;
         background: #111;
         color: #eee;
-        font-family: Arial, sans-serif;
         text-align: center;
-        padding-top: 60px;
+        padding: 40px;
+    }
+    h1 {
+        color: #6cf;
+        margin-bottom: 10px;
     }
     button {
-        padding: 14px 28px;
+        padding: 12px 20px;
+        margin: 8px;
         font-size: 18px;
         border: none;
         border-radius: 6px;
-        background: #444;
-        color: #fff;
         cursor: pointer;
+        background: #333;
+        color: #fff;
+        transition: 0.2s;
     }
     button:hover {
-        background: #666;
+        background: #555;
     }
 </style>
 </head>
 
 <body>
 
-<h2>Short Embedded Piano Tones</h2>
-<div id="status">Loading samples…</div>
-<br>
-<button onclick="playCChord()">Play C Chord</button>
+<h1>Chromatic Chord Engine</h1>
+<p>All 12 notes loaded directly from WAV files in the root folder.</p>
+
+<button onclick="playChord(['C4','E4','G4'])">C Major</button>
+<button onclick="playChord(['D4','F4','A4'])">D Minor</button>
+<button onclick="playChord(['G4','B4','D4','F4'])">G7</button>
+<button onclick="playChord(['C4','D#4','G4'])">C Minor</button>
 
 <script>
-// --------------------------------------------------
-// Audio Context
-// --------------------------------------------------
-let audioCtx = null;
-function ensureAudio() {
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
+let audioCtx;
+const buffers = {};
+
+// Load a single WAV file
+async function loadNote(name) {
+    const response = await fetch(`${name}.wav`);
+    const arrayBuffer = await response.arrayBuffer();
+    return audioCtx.decodeAudioData(arrayBuffer);
 }
 
-// --------------------------------------------------
-// Short, valid WAV samples (C4, E4, G4)
-// These are tiny, decodable, and safe to embed.
-// --------------------------------------------------
-const SAMPLE_C4 = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAACJWAAABAAgAZGF0YQAAAAAAgICAf39/fw==";
-const SAMPLE_E4 = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAACJWAAABAAgAZGF0YQAAAAAAf39/gICAfw==";
-const SAMPLE_G4 = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAACJWAAABAAgAZGF0YQAAAAAAgH9/f4CAgA==";
-
-// --------------------------------------------------
-// Correct Base64 Loader
-// --------------------------------------------------
-async function loadSample(dataUri) {
-    ensureAudio();
-    const base64 = dataUri.split(",")[1];
-    const binary = atob(base64);
-    const len = binary.length;
-    const buf = new ArrayBuffer(len);
-    const view = new Uint8Array(buf);
-    for (let i = 0; i < len; i++) {
-        view[i] = binary.charCodeAt(i);
-    }
-    return await audioCtx.decodeAudioData(buf);
-}
-
-// --------------------------------------------------
-// Load All Samples
-// --------------------------------------------------
-let c4Buffer, e4Buffer, g4Buffer;
-
+// Initialize audio + load all 12 notes
 async function init() {
-    try {
-        c4Buffer = await loadSample(SAMPLE_C4);
-        e4Buffer = await loadSample(SAMPLE_E4);
-        g4Buffer = await loadSample(SAMPLE_G4);
-        document.getElementById("status").innerText = "Audio ready – click to play.";
-    } catch (err) {
-        document.getElementById("status").innerText = "Error loading samples.";
-        console.error(err);
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    const noteNames = [
+        "C4", "C#4", "D4", "D#4", "E4", "F4",
+        "F#4", "G4", "G#4", "A4", "A#4", "B4"
+    ];
+
+    for (const n of noteNames) {
+        buffers[n] = await loadNote(n);
     }
+
+    console.log("All 12 notes loaded.");
 }
 
-init();
+// Play a single note
+function playNote(name) {
+    const src = audioCtx.createBufferSource();
+    src.buffer = buffers[name];
+    src.connect(audioCtx.destination);
+    src.start();
+}
 
-// --------------------------------------------------
-// Play C Major Chord
-// --------------------------------------------------
-function playCChord() {
-    ensureAudio();
-    if (!c4Buffer || !e4Buffer || !g4Buffer) return;
-
+// Play a chord (multiple notes at once)
+function playChord(notes) {
     const now = audioCtx.currentTime;
-
-    const c = audioCtx.createBufferSource();
-    c.buffer = c4Buffer;
-    c.connect(audioCtx.destination);
-    c.start(now);
-
-    const e = audioCtx.createBufferSource();
-    e.buffer = e4Buffer;
-    e.connect(audioCtx.destination);
-    e.start(now);
-
-    const g = audioCtx.createBufferSource();
-    g.buffer = g4Buffer;
-    g.connect(audioCtx.destination);
-    g.start(now);
+    notes.forEach(n => {
+        const src = audioCtx.createBufferSource();
+        src.buffer = buffers[n];
+        src.connect(audioCtx.destination);
+        src.start(now);
+    });
 }
 
-// --------------------------------------------------
-// Unlock audio on first click
-// --------------------------------------------------
-window.addEventListener("click", () => {
-    ensureAudio();
-}, { once: true });
-
+// Start loading as soon as the page opens
+window.onload = init;
 </script>
+
 </body>
 </html>
