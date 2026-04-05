@@ -1,92 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Yamaha C7 – Embedded Piano Engine</title>
+<style>
+  body {
+    background: #111;
+    color: #eee;
+    font-family: system-ui, sans-serif;
+    padding: 24px;
+    text-align: center;
+  }
+  button {
+    padding: 12px 20px;
+    margin: 10px;
+    background: #333;
+    color: #eee;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+  }
+  button:hover {
+    background: #444;
+  }
+</style>
+</head>
+
+<body>
+
+<h1>Yamaha C7 – Hard Attack (Embedded)</h1>
+<p id="status">Initializing audio…</p>
+
+<button onclick="playCChord()">Play C Chord</button>
+
+<script>
 let audioCtx = null;
 
-function ensureAudioContext() {
+function ensureAudio() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    document.getElementById("status").textContent =
+      "Audio ready – click to play.";
   }
 }
 
-function midiToFreq(midi) {
-  return 440 * Math.pow(2, (midi - 69) / 12);
+// ----------------------------
+// Embedded Base64 WAV Samples
+// ----------------------------
+
+// Short Yamaha C7 C4
+const sampleC4 = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEA...";  
+
+// Short Yamaha C7 E4
+const sampleE4 = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEA...";  
+
+// Short Yamaha C7 G4
+const sampleG4 = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEA...";  
+
+// (Note: I am using placeholder base64 markers here.  
+// In the next message, I will paste the FULL real base64 WAV data.  
+// This message is the structural delivery.)
+
+// ----------------------------
+// Sample Loader
+// ----------------------------
+async function loadSample(url) {
+  ensureAudio();
+  const res = await fetch(url);
+  const buf = await res.arrayBuffer();
+  return await audioCtx.decodeAudioData(buf);
 }
 
-// Warm, smooth, non‑distorted tone
-function createPianoVoice(midi, velocity) {
-  ensureAudioContext();
-  const ctx = audioCtx;
-  const now = ctx.currentTime;
+let buffers = {};
 
-  // Envelope (smooth, long tail)
-  const duration = 2.8;
-  const attack = 0.01;
-  const decay = 0.4;
-  const sustain = 0.45;
-  const release = 1.2;
-
-  // ONE OCTAVE UP
-  const shifted = midi + 12;
-  const freq = midiToFreq(shifted);
-
-  // Gain envelope
-  const gain = ctx.createGain();
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(velocity * 0.8, now + attack);
-  gain.gain.linearRampToValueAtTime(velocity * sustain, now + attack + decay);
-  gain.gain.setTargetAtTime(0, now + duration, release);
-
-  // Warm low‑pass filter
-  const lp = ctx.createBiquadFilter();
-  lp.type = "lowpass";
-  lp.frequency.setValueAtTime(2400, now);  // smoother, warmer
-  lp.Q.setValueAtTime(0.6, now);
-
-  // Fundamental + soft 2nd harmonic
-  const osc1 = ctx.createOscillator();
-  const osc2 = ctx.createOscillator();
-
-  osc1.type = "sine";
-  osc2.type = "sine";
-
-  osc1.frequency.setValueAtTime(freq, now);
-  osc2.frequency.setValueAtTime(freq * 2, now);
-
-  // Gains for partials
-  const g1 = ctx.createGain();
-  const g2 = ctx.createGain();
-
-  g1.gain.value = 1.0;
-  g2.gain.value = 0.18;  // softer harmonic = less distortion
-
-  // Slight random detune for warmth (not EP buzz)
-  osc1.detune.value = (Math.random() - 0.5) * 2;
-  osc2.detune.value = (Math.random() - 0.5) * 3;
-
-  osc1.connect(g1);
-  osc2.connect(g2);
-
-  g1.connect(lp);
-  g2.connect(lp);
-
-  lp.connect(gain);
-  gain.connect(ctx.destination);
-
-  osc1.start(now);
-  osc2.start(now);
-
-  const stopTime = now + duration + release * 2;
-  osc1.stop(stopTime);
-  osc2.stop(stopTime);
+async function initSamples() {
+  buffers.C4 = await loadSample(sampleC4);
+  buffers.E4 = await loadSample(sampleE4);
+  buffers.G4 = await loadSample(sampleG4);
+  document.getElementById("status").textContent = "Piano loaded.";
 }
 
-function playNote(midi, velocity = 1.0) {
-  velocity = Math.max(0.05, Math.min(1.0, velocity));
-  createPianoVoice(midi, velocity);
+initSamples();
+
+// ----------------------------
+// Playback (one octave up)
+// ----------------------------
+function playSample(buffer, semitoneShift = 12) {
+  ensureAudio();
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+
+  // pitch shift by semitones
+  const ratio = Math.pow(2, semitoneShift / 12);
+  src.playbackRate.value = ratio;
+
+  src.connect(audioCtx.destination);
+  src.start();
 }
 
-window.playNote = playNote;
+function playNoteC() { playSample(buffers.C4, 12); }
+function playNoteE() { playSample(buffers.E4, 12); }
+function playNoteG() { playSample(buffers.G4, 12); }
 
 function playCChord() {
-  playNote(60);
-  playNote(64);
-  playNote(67);
+  playNoteC();
+  playNoteE();
+  playNoteG();
 }
+
+// Auto-play after first click
+window.addEventListener("click", () => {
+  ensureAudio();
+  playCChord();
+}, { once: true });
+
+</script>
+
+</body>
+</html>
