@@ -1,35 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>play2 – Auto C Chord</title>
-  <style>
-    body {
-      font-family: system-ui, sans-serif;
-      background: #111;
-      color: #eee;
-      padding: 24px;
-      text-align: center;
-    }
-    button {
-      padding: 10px 16px;
-      margin: 6px;
-      background: #333;
-      color: #eee;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 14px;
-    }
-    button:hover {
-      background: #444;
-    }
-  </style>
+  <meta charset="UTF-8">
+  <title>Test Page</title>
 </head>
-<body>
+<body style="background:#111; color:#eee; font-family:sans-serif; padding:20px;">
 
-  <h1>Neutral Studio Piano – Auto C Chord</h1>
-  <p id="status">Initializing audio…</p>
+  <h1>Test Page Loaded</h1>
+  <p>If you can see this text, the HTML is working.</p>
 
   <button onclick="playCChord()">Play C Chord</button>
 
@@ -39,8 +17,6 @@
   function ensureAudioContext() {
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      document.getElementById("status").textContent =
-        "Audio ready – C chord will auto‑play.";
     }
   }
 
@@ -71,70 +47,32 @@
     const lp = ctx.createBiquadFilter();
     lp.type = "lowpass";
     lp.frequency.setValueAtTime(3000, now);
-    lp.Q.setValueAtTime(0.7, now);
 
-    const osc1 = ctx.createOscillator();
-    const osc2 = ctx.createOscillator();
-    const osc3 = ctx.createOscillator();
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(freq, now);
 
-    osc1.type = "sine";
-    osc2.type = "sine";
-    osc3.type = "sine";
-
-    osc1.frequency.setValueAtTime(freq, now);
-    osc2.frequency.setValueAtTime(freq * 2, now);
-    osc3.frequency.setValueAtTime(freq * 3, now);
-
-    const g1 = ctx.createGain();
-    const g2 = ctx.createGain();
-    const g3 = ctx.createGain();
-
-    g1.gain.value = 1.0;
-    g2.gain.value = 0.35;
-    g3.gain.value = 0.18;
-
-    osc2.detune.value = +3;
-    osc3.detune.value = -4;
-
-    osc1.connect(g1);
-    osc2.connect(g2);
-    osc3.connect(g3);
-
-    g1.connect(lp);
-    g2.connect(lp);
-    g3.connect(lp);
-
+    osc.connect(lp);
     lp.connect(gain);
     gain.connect(ctx.destination);
 
-    osc1.start(now);
-    osc2.start(now);
-    osc3.start(now);
-
-    const stopTime = now + duration + release * 2;
-    osc1.stop(stopTime);
-    osc2.stop(stopTime);
-    osc3.stop(stopTime);
+    osc.start(now);
+    osc.stop(now + duration + release);
   }
 
   function playNote(midi, velocity = 1.0) {
-    velocity = Math.max(0.05, Math.min(1.0, velocity));
     createPianoVoice(midi, velocity);
   }
 
-  window.playNote = playNote;
-
   function playCChord() {
-    playNote(60, 1.0);
-    playNote(64, 1.0);
-    playNote(67, 1.0);
+    playNote(60);
+    playNote(64);
+    playNote(67);
   }
 
   window.addEventListener("click", () => {
-    ensureAudioContext();
     playCChord();
   }, { once: true });
-
 </script>
 
 </body>
