@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>play2 – C Chord Test</title>
+  <title>play2 – Auto C Chord</title>
   <style>
     body {
       font-family: system-ui, sans-serif;
@@ -28,7 +28,7 @@
 </head>
 <body>
 
-  <h1>Neutral Studio Piano – C Chord Test</h1>
+  <h1>Neutral Studio Piano – Auto C Chord</h1>
   <p id="status">Initializing audio…</p>
 
   <button onclick="playCChord()">Play C Chord</button>
@@ -40,7 +40,7 @@
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       document.getElementById("status").textContent =
-        "Audio ready – click Play C Chord or call playNote().";
+        "Audio ready – C chord will auto‑play.";
     }
   }
 
@@ -54,15 +54,13 @@
     const ctx = audioCtx;
     const now = ctx.currentTime;
 
-    // Envelope (extended tail)
     const duration = 3.0;   // long decay
     const attack = 0.005;
     const decay = 0.25;
     const sustain = 0.35;
     const release = 1.2;
 
-    // OCTAVE DOWN
-    const shifted = midi - 12;
+    const shifted = midi - 12;  // OCTAVE DOWN
     const freq = midiToFreq(shifted);
 
     const gain = ctx.createGain();
@@ -120,7 +118,6 @@
     osc3.stop(stopTime);
   }
 
-  // Public API
   function playNote(midi, velocity = 1.0) {
     velocity = Math.max(0.05, Math.min(1.0, velocity));
     createPianoVoice(midi, velocity);
@@ -135,16 +132,12 @@
     playNote(67, 1.0); // G
   }
 
-  // Auto‑play C chord on load
+  // Auto‑play C chord after first user gesture
   window.addEventListener("click", () => {
-    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    ensureAudioContext();
+    playCChord();
   }, { once: true });
 
-  window.addEventListener("load", () => {
-    setTimeout(() => {
-      playCChord();
-    }, 300);
-  });
 </script>
 
 </body>
