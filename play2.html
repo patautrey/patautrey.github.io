@@ -1,240 +1,210 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Chord Player</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<style>
-  body {
-    font-family: system-ui, sans-serif;
-    background: #0b1f26;
-    color: #f5f5f5;
-    margin: 0;
-    padding: 20px;
-    text-align: center;
-  }
-  h1 { font-size: 2.4rem; margin-bottom: 10px; }
-  #status { margin-top: 10px; font-size: 1.1rem; opacity: 0.9; }
-  #error { margin-top: 10px; color: #ff6b6b; font-weight: bold; }
-  #playBtn {
-    margin-top: 30px;
-    padding: 18px 32px;
-    font-size: 1.4rem;
-    border: none;
-    border-radius: 12px;
-    background: #1dd1a1;
-    color: #00332a;
-    cursor: pointer;
-    transition: background 0.2s ease;
-  }
-  #playBtn:disabled {
-    background: #145f4d;
-    cursor: not-allowed;
-  }
-</style>
+  <meta charset="UTF-8" />
+  <title>Neutral Studio Piano – play2</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    h1 {
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+    .status {
+      font-size: 13px;
+      opacity: 0.8;
+      margin-bottom: 16px;
+    }
+    .keys {
+      display: flex;
+      gap: 4px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    button.key {
+      min-width: 40px;
+      padding: 8px 10px;
+      border-radius: 4px;
+      border: none;
+      background: #333;
+      color: #eee;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.1s, transform 0.05s;
+    }
+    button.key:active {
+      background: #555;
+      transform: translateY(1px);
+    }
+    .hint {
+      margin-top: 16px;
+      font-size: 12px;
+      opacity: 0.7;
+      text-align: center;
+      max-width: 420px;
+    }
+  </style>
 </head>
-
 <body>
-<h1 id="chordLabel">Chord Player</h1>
-<div id="status">Loading chord…</div>
-<div id="error"></div>
-<button id="playBtn" disabled>Play Again</button>
+  <h1>Neutral Studio Piano – play2</h1>
+  <div class="status" id="status">Initializing audio…</div>
 
-<script>
-/* -----------------------------
-   URL PARAMS
-------------------------------*/
-const params = new URLSearchParams(window.location.search);
-const chordParam = params.get("chord");
-const instrumentParam = params.get("instrument") || "piano";
+  <div class="keys">
+    <button class="key" data-note="60">C4</button>
+    <button class="key" data-note="62">D4</button>
+    <button class="key" data-note="64">E4</button>
+    <button class="key" data-note="65">F4</button>
+    <button class="key" data-note="67">G4</button>
+    <button class="key" data-note="69">A4</button>
+    <button class="key" data-note="71">B4</button>
+    <button class="key" data-note="72">C5</button>
+  </div>
 
-const chordLabel = document.getElementById("chordLabel");
-const statusEl = document.getElementById("status");
-const errorEl = document.getElementById("error");
-const playBtn = document.getElementById("playBtn");
+  <div class="hint">
+    This file exposes <code>playNote(midi, velocity = 1.0)</code> globally for your engine.<br/>
+    Medium decay (~1.5s), warm low‑pass, neutral, non‑distorted tone.
+  </div>
 
-if (!chordParam) {
-  chordLabel.textContent = "No chord provided";
-  statusEl.textContent = "Add ?chord=C, ?chord=Am, ?chord=G7, etc.";
-  playBtn.disabled = true;
-} else {
-  chordLabel.textContent = chordParam;
-  statusEl.textContent = "Tap to audition this chord.";
-  playBtn.disabled = false;
-}
+  <script>
+    // --- Audio setup ---
+    let audioCtx = null;
 
-/* -----------------------------
-   CHORD PARSER
-------------------------------*/
-const ROOT_TO_SEMITONE = {
-  "C": 0, "B#": 0,
-  "C#": 1, "Db": 1,
-  "D": 2,
-  "D#": 3, "Eb": 3,
-  "E": 4, "Fb": 4,
-  "F": 5, "E#": 5,
-  "F#": 6, "Gb": 6,
-  "G": 7,
-  "G#": 8, "Ab": 8,
-  "A": 9,
-  "A#": 10, "Bb": 10,
-  "B": 11, "Cb": 11
-};
+    function ensureAudioContext() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const status = document.getElementById('status');
+        if (status) status.textContent = 'Audio ready – click a note or call playNote(midi, velocity).';
+      }
+    }
 
-function rootToMidi(root, octave = 4) {
-  const semitone = ROOT_TO_SEMITONE[root.toUpperCase()];
-  if (semitone === undefined) return null;
-  return 12 * (octave + 1) + semitone;
-}
+    // MIDI note → frequency
+    function midiToFreq(midi) {
+      return 440 * Math.pow(2, (midi - 69) / 12);
+    }
 
-function normalizeQuality(q) {
-  if (!q) return "";
-  return q.replace(/♭/g, "b").replace(/♯/g, "#").trim().toLowerCase();
-}
+    // Simple neutral “piano‑ish” tone using layered oscillators + envelope + warm LPF
+    function createPianoVoice(midi, velocity) {
+      ensureAudioContext();
+      const ctx = audioCtx;
 
-function parseSimpleChord(chord) {
-  const match = chord.match(/^([A-G](?:#|b)?)(.*)$/i);
-  if (!match) return null;
-  return { root: match[1], quality: normalizeQuality(match[2] || "") };
-}
+      const now = ctx.currentTime;
+      const duration = 1.5; // medium decay
+      const attack = 0.005;
+      const decay = 0.25;
+      const sustainLevel = 0.35;
+      const release = 0.6;
 
-function parseChord(chord) {
-  let main = chord;
-  let bassRoot = null;
+      const freq = midiToFreq(midi);
 
-  const slashIndex = chord.indexOf("/");
-  if (slashIndex !== -1) {
-    main = chord.slice(0, slashIndex).trim();
-    const bassPart = chord.slice(slashIndex + 1).trim();
-    const m = bassPart.match(/^([A-G](?:#|b)?)/i);
-    if (m) bassRoot = m[1];
-  }
+      // Gain envelope
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(velocity, now + attack);
+      gain.gain.linearRampToValueAtTime(velocity * sustainLevel, now + attack + decay);
+      gain.gain.setTargetAtTime(0, now + duration, release);
 
-  const parsedMain = parseSimpleChord(main);
-  if (!parsedMain) return null;
+      // Warm low‑pass filter
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      // Slightly brighter in midrange, darker in extremes
+      const baseCutoff = 4500;
+      const noteOffset = (midi - 60) * 80; // modest tilt
+      lp.frequency.setValueAtTime(Math.max(1500, baseCutoff + noteOffset), now);
+      lp.Q.setValueAtTime(0.7, now);
 
-  return { root: parsedMain.root, quality: parsedMain.quality, bassRoot };
-}
+      // Slight “piano‑like” harmonic stack: fundamental + 2nd + 3rd partials
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const osc3 = ctx.createOscillator();
 
-function buildChordIntervals(quality) {
-  if (quality === "" || quality === "maj") return [0,4,7];
-  if (quality === "m") return [0,3,7];
-  if (quality === "7") return [0,4,7,10];
-  return [0,4,7];
-}
+      osc1.type = 'sine';
+      osc2.type = 'sine';
+      osc3.type = 'sine';
 
-function buildChordNotes(parsed) {
-  if (!parsed) return null;
-  const rootMidi = rootToMidi(parsed.root, 4);
-  if (rootMidi == null) return null;
+      osc1.frequency.setValueAtTime(freq, now);
+      osc2.frequency.setValueAtTime(freq * 2, now);
+      osc3.frequency.setValueAtTime(freq * 3, now);
 
-  const intervals = buildChordIntervals(parsed.quality);
-  const notes = intervals.map(i => rootMidi + i);
+      const g1 = ctx.createGain();
+      const g2 = ctx.createGain();
+      const g3 = ctx.createGain();
 
-  if (parsed.bassRoot) {
-    const bassMidi = rootToMidi(parsed.bassRoot, 2);
-    if (bassMidi != null) notes.unshift(bassMidi);
-  }
+      g1.gain.setValueAtTime(1.0, now);
+      g2.gain.setValueAtTime(0.35, now);
+      g3.gain.setValueAtTime(0.18, now);
 
-  return notes;
-}
+      // Slight detune for body without chorus‑y beating
+      osc2.detune.setValueAtTime(+3, now);
+      osc3.detune.setValueAtTime(-4, now);
 
-/* -----------------------------
-   AUDIO ENGINE (Neutral Piano)
-------------------------------*/
-let audioCtx = null;
-let master = null;
+      osc1.connect(g1);
+      osc2.connect(g2);
+      osc3.connect(g3);
 
-function ensureAudio() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      g1.connect(lp);
+      g2.connect(lp);
+      g3.connect(lp);
 
-    // Master gain + soft limiter
-    master = audioCtx.createGain();
-    master.gain.value = 0.5;
+      lp.connect(gain);
+      gain.connect(ctx.destination);
 
-    // Gentle lowpass for piano warmth
-    const lp = audioCtx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.value = 4800;
+      osc1.start(now);
+      osc2.start(now);
+      osc3.start(now);
 
-    lp.connect(master);
-    master.connect(audioCtx.destination);
+      const stopTime = now + duration + release * 2;
+      osc1.stop(stopTime);
+      osc2.stop(stopTime);
+      osc3.stop(stopTime);
 
-    audioCtx.masterInput = lp;
-  }
-  return audioCtx;
-}
+      return { osc1, osc2, osc3, gain, lp };
+    }
 
-/* -----------------------------
-   PIANO ENGINE (Clean, Soft)
-------------------------------*/
-function playPianoChord(notes) {
-  const ctx = ensureAudio();
-  const now = ctx.currentTime;
+    // Public API: playNote(midi, velocity = 1.0)
+    function playNote(midi, velocity = 1.0) {
+      velocity = Math.max(0.05, Math.min(1.0, velocity || 1.0));
+      createPianoVoice(midi, velocity);
+    }
 
-  notes.forEach((midi, i) => {
-    const osc = ctx.createOscillator();
-    const amp = ctx.createGain();
-    const filter = ctx.createBiquadFilter();
+    // Expose globally for your engine
+    window.playNote = playNote;
 
-    const freq = 440 * Math.pow(2, (midi - 69) / 12);
+    // UI wiring
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('button.key');
+      if (!btn) return;
+      const midi = parseInt(btn.getAttribute('data-note'), 10);
+      if (!isNaN(midi)) {
+        playNote(midi, 0.9);
+      }
+    });
 
-    // Soft-saw = band-limited, piano-friendly
-    osc.type = "sawtooth";
-    osc.frequency.value = freq;
+    // Resume audio context on first user gesture (mobile / some browsers)
+    ['click', 'keydown', 'touchstart'].forEach(evt => {
+      window.addEventListener(evt, () => {
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        } else if (!audioCtx) {
+          ensureAudioContext();
+        }
+      }, { once: true });
+    });
 
-    // Random phase to eliminate beating
-    osc.detune.value = (Math.random() * 6) - 3;
-
-    // Gentle lowpass for piano tone
-    filter.type = "lowpass";
-    filter.frequency.value = 3500;
-
-    // Rounded piano envelope
-    amp.gain.setValueAtTime(0, now);
-    amp.gain.linearRampToValueAtTime(0.18, now + 0.015);
-    amp.gain.linearRampToValueAtTime(0.0, now + 1.0);
-
-    osc.connect(filter).connect(amp).connect(ctx.masterInput);
-
-    osc.start(now + i * 0.002);
-    osc.stop(now + 1.1);
-  });
-}
-
-/* -----------------------------
-   MASTER PLAY
-------------------------------*/
-function playChord() {
-  errorEl.textContent = "";
-
-  const parsed = parseChord(chordParam);
-  if (!parsed) {
-    errorEl.textContent = "Could not parse chord.";
-    return;
-  }
-
-  const notes = buildChordNotes(parsed);
-  if (!notes || notes.length === 0) {
-    errorEl.textContent = "No playable notes.";
-    return;
-  }
-
-  playPianoChord(notes);
-}
-
-/* -----------------------------
-   BUTTON + AUTOPLAY
-------------------------------*/
-playBtn.addEventListener("click", () => {
-  if (!playBtn.disabled) playChord();
-});
-
-window.addEventListener("load", () => {
-  if (chordParam) setTimeout(() => playChord(), 150);
-});
-</script>
-
+    // Initial status text
+    const status = document.getElementById('status');
+    if (status) {
+      status.textContent = 'Click anywhere to unlock audio, then use the keys or playNote(midi).';
+    }
+  </script>
 </body>
 </html>
