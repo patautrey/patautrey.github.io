@@ -29,6 +29,12 @@
     button:hover {
         background: #555;
     }
+    #startButton {
+        background: #0a84ff;
+        font-size: 20px;
+        padding: 14px 26px;
+        margin-bottom: 25px;
+    }
 </style>
 </head>
 
@@ -37,6 +43,10 @@
 <h1>Chromatic Chord Engine</h1>
 <p>All 12 notes loaded directly from WAV files in the root folder.</p>
 
+<!-- REQUIRED USER GESTURE -->
+<button id="startButton" onclick="initAudio()">Start Audio</button>
+
+<!-- CHORD BUTTONS -->
 <button onclick="playChord(['C4','E4','G4'])">C Major</button>
 <button onclick="playChord(['D4','F4','A4'])">D Minor</button>
 <button onclick="playChord(['G4','B4','D4','F4'])">G7</button>
@@ -45,6 +55,7 @@
 <script>
 let audioCtx;
 const buffers = {};
+let initialized = false;
 
 // Load a single WAV file
 async function loadNote(name) {
@@ -53,8 +64,11 @@ async function loadNote(name) {
     return audioCtx.decodeAudioData(arrayBuffer);
 }
 
-// Initialize audio + load all 12 notes
-async function init() {
+// Initialize audio AFTER user gesture
+async function initAudio() {
+    if (initialized) return;
+    initialized = true;
+
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
     const noteNames = [
@@ -67,18 +81,13 @@ async function init() {
     }
 
     console.log("All 12 notes loaded.");
-}
-
-// Play a single note
-function playNote(name) {
-    const src = audioCtx.createBufferSource();
-    src.buffer = buffers[name];
-    src.connect(audioCtx.destination);
-    src.start();
+    document.getElementById("startButton").style.display = "none";
 }
 
 // Play a chord (multiple notes at once)
 function playChord(notes) {
+    if (!initialized) return;
+
     const now = audioCtx.currentTime;
     notes.forEach(n => {
         const src = audioCtx.createBufferSource();
@@ -87,9 +96,6 @@ function playChord(notes) {
         src.start(now);
     });
 }
-
-// Start loading as soon as the page opens
-window.onload = init;
 </script>
 
 </body>
