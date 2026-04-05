@@ -48,19 +48,18 @@
     return 440 * Math.pow(2, (midi - 69) / 12);
   }
 
-  // --- Piano voice (octave down + long tail) ---
   function createPianoVoice(midi, velocity) {
     ensureAudioContext();
     const ctx = audioCtx;
     const now = ctx.currentTime;
 
-    const duration = 3.0;   // long decay
+    const duration = 3.0;
     const attack = 0.005;
     const decay = 0.25;
     const sustain = 0.35;
     const release = 1.2;
 
-    const shifted = midi - 12;  // OCTAVE DOWN
+    const shifted = midi - 12;
     const freq = midiToFreq(shifted);
 
     const gain = ctx.createGain();
@@ -125,14 +124,12 @@
 
   window.playNote = playNote;
 
-  // --- C CHORD ---
   function playCChord() {
-    playNote(60, 1.0); // C
-    playNote(64, 1.0); // E
-    playNote(67, 1.0); // G
+    playNote(60, 1.0);
+    playNote(64, 1.0);
+    playNote(67, 1.0);
   }
 
-  // Auto‑play C chord after first user gesture
   window.addEventListener("click", () => {
     ensureAudioContext();
     playCChord();
