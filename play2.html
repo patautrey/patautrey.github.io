@@ -44,7 +44,7 @@
 <p>All 12 notes loaded directly from WAV files in the root folder.</p>
 
 <!-- REQUIRED USER GESTURE -->
-<button id="startButton" onclick="initAudio()">Start Audio</button>
+<button id="startButton" onclick="startAudio()">Start Audio</button>
 
 <!-- CHORD BUTTONS -->
 <button onclick="playChord(['C4','E4','G4'])">C Major</button>
@@ -53,22 +53,20 @@
 <button onclick="playChord(['C4','D#4','G4'])">C Minor</button>
 
 <script>
-let audioCtx;
-const buffers = {};
-let initialized = false;
+let audioCtx = null;
+let buffers = {};
+let ready = false;
 
-// Load a single WAV file
 async function loadNote(name) {
-    const response = await fetch(`${name}.wav`);
+    const response = await fetch(name + ".wav");
     const arrayBuffer = await response.arrayBuffer();
     return audioCtx.decodeAudioData(arrayBuffer);
 }
 
-// Initialize audio AFTER user gesture
-async function initAudio() {
-    if (initialized) return;
-    initialized = true;
+async function startAudio() {
+    if (ready) return;
 
+    // Create AudioContext ONLY after user gesture
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
     const noteNames = [
@@ -76,19 +74,24 @@ async function initAudio() {
         "F#4", "G4", "G#4", "A4", "A#4", "B4"
     ];
 
+    // Load all notes
     for (const n of noteNames) {
         buffers[n] = await loadNote(n);
     }
 
-    console.log("All 12 notes loaded.");
+    ready = true;
     document.getElementById("startButton").style.display = "none";
+    console.log("All 12 notes loaded and ready.");
 }
 
-// Play a chord (multiple notes at once)
 function playChord(notes) {
-    if (!initialized) return;
+    if (!ready) {
+        console.log("Audio not initialized yet.");
+        return;
+    }
 
     const now = audioCtx.currentTime;
+
     notes.forEach(n => {
         const src = audioCtx.createBufferSource();
         src.buffer = buffers[n];
