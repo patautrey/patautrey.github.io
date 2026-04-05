@@ -1,11 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>play2 – C Chord Test</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #111;
+      color: #eee;
+      padding: 24px;
+      text-align: center;
+    }
+    button {
+      padding: 10px 16px;
+      margin: 6px;
+      background: #333;
+      color: #eee;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #444;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Neutral Studio Piano – C Chord Test</h1>
+  <p id="status">Initializing audio…</p>
+
+  <button onclick="playCChord()">Play C Chord</button>
+
 <script>
   let audioCtx = null;
 
   function ensureAudioContext() {
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const status = document.getElementById('status');
-      if (status) status.textContent = 'Audio ready – click a note or call playNote(midi, velocity).';
+      document.getElementById("status").textContent =
+        "Audio ready – click Play C Chord or call playNote().";
     }
   }
 
@@ -13,46 +48,41 @@
     return 440 * Math.pow(2, (midi - 69) / 12);
   }
 
-  // UPDATED: octave down + longer tail
+  // --- Piano voice (octave down + long tail) ---
   function createPianoVoice(midi, velocity) {
     ensureAudioContext();
     const ctx = audioCtx;
-
     const now = ctx.currentTime;
 
-    // ↓↓↓ UPDATED ENVELOPE ↓↓↓
-    const duration = 3.0;     // doubled tail (was 1.5)
+    // Envelope (extended tail)
+    const duration = 3.0;   // long decay
     const attack = 0.005;
     const decay = 0.25;
-    const sustainLevel = 0.35;
-    const release = 1.2;      // longer release to match longer tail
-    // ↑↑↑ UPDATED ENVELOPE ↑↑↑
+    const sustain = 0.35;
+    const release = 1.2;
 
-    // ↓↓↓ UPDATED OCTAVE ↓↓↓
-    const shiftedMidi = midi - 12;   // drop by one octave
-    const freq = midiToFreq(shiftedMidi);
-    // ↑↑↑ UPDATED OCTAVE ↑↑↑
+    // OCTAVE DOWN
+    const shifted = midi - 12;
+    const freq = midiToFreq(shifted);
 
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, now);
     gain.gain.linearRampToValueAtTime(velocity, now + attack);
-    gain.gain.linearRampToValueAtTime(velocity * sustainLevel, now + attack + decay);
+    gain.gain.linearRampToValueAtTime(velocity * sustain, now + attack + decay);
     gain.gain.setTargetAtTime(0, now + duration, release);
 
     const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    const baseCutoff = 4200;                 // slightly darker for lower octave
-    const noteOffset = (shiftedMidi - 60) * 60;
-    lp.frequency.setValueAtTime(Math.max(1200, baseCutoff + noteOffset), now);
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(3000, now);
     lp.Q.setValueAtTime(0.7, now);
 
     const osc1 = ctx.createOscillator();
     const osc2 = ctx.createOscillator();
     const osc3 = ctx.createOscillator();
 
-    osc1.type = 'sine';
-    osc2.type = 'sine';
-    osc3.type = 'sine';
+    osc1.type = "sine";
+    osc2.type = "sine";
+    osc3.type = "sine";
 
     osc1.frequency.setValueAtTime(freq, now);
     osc2.frequency.setValueAtTime(freq * 2, now);
@@ -62,12 +92,12 @@
     const g2 = ctx.createGain();
     const g3 = ctx.createGain();
 
-    g1.gain.setValueAtTime(1.0, now);
-    g2.gain.setValueAtTime(0.35, now);
-    g3.gain.setValueAtTime(0.18, now);
+    g1.gain.value = 1.0;
+    g2.gain.value = 0.35;
+    g3.gain.value = 0.18;
 
-    osc2.detune.setValueAtTime(+3, now);
-    osc3.detune.setValueAtTime(-4, now);
+    osc2.detune.value = +3;
+    osc3.detune.value = -4;
 
     osc1.connect(g1);
     osc2.connect(g2);
@@ -90,10 +120,32 @@
     osc3.stop(stopTime);
   }
 
+  // Public API
   function playNote(midi, velocity = 1.0) {
-    velocity = Math.max(0.05, Math.min(1.0, velocity || 1.0));
+    velocity = Math.max(0.05, Math.min(1.0, velocity));
     createPianoVoice(midi, velocity);
   }
 
   window.playNote = playNote;
+
+  // --- C CHORD ---
+  function playCChord() {
+    playNote(60, 1.0); // C
+    playNote(64, 1.0); // E
+    playNote(67, 1.0); // G
+  }
+
+  // Auto‑play C chord on load
+  window.addEventListener("click", () => {
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  }, { once: true });
+
+  window.addEventListener("load", () => {
+    setTimeout(() => {
+      playCChord();
+    }, 300);
+  });
 </script>
+
+</body>
+</html>
