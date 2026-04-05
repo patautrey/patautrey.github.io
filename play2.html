@@ -1,210 +1,99 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Neutral Studio Piano – play2</title>
-  <style>
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #111;
-      color: #eee;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      min-height: 100vh;
-      padding: 24px;
+<script>
+  let audioCtx = null;
+
+  function ensureAudioContext() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const status = document.getElementById('status');
+      if (status) status.textContent = 'Audio ready – click a note or call playNote(midi, velocity).';
     }
-    h1 {
-      font-size: 20px;
-      margin-bottom: 8px;
-    }
-    .status {
-      font-size: 13px;
-      opacity: 0.8;
-      margin-bottom: 16px;
-    }
-    .keys {
-      display: flex;
-      gap: 4px;
-      margin-top: 16px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-    button.key {
-      min-width: 40px;
-      padding: 8px 10px;
-      border-radius: 4px;
-      border: none;
-      background: #333;
-      color: #eee;
-      cursor: pointer;
-      font-size: 13px;
-      transition: background 0.1s, transform 0.05s;
-    }
-    button.key:active {
-      background: #555;
-      transform: translateY(1px);
-    }
-    .hint {
-      margin-top: 16px;
-      font-size: 12px;
-      opacity: 0.7;
-      text-align: center;
-      max-width: 420px;
-    }
-  </style>
-</head>
-<body>
-  <h1>Neutral Studio Piano – play2</h1>
-  <div class="status" id="status">Initializing audio…</div>
+  }
 
-  <div class="keys">
-    <button class="key" data-note="60">C4</button>
-    <button class="key" data-note="62">D4</button>
-    <button class="key" data-note="64">E4</button>
-    <button class="key" data-note="65">F4</button>
-    <button class="key" data-note="67">G4</button>
-    <button class="key" data-note="69">A4</button>
-    <button class="key" data-note="71">B4</button>
-    <button class="key" data-note="72">C5</button>
-  </div>
+  function midiToFreq(midi) {
+    return 440 * Math.pow(2, (midi - 69) / 12);
+  }
 
-  <div class="hint">
-    This file exposes <code>playNote(midi, velocity = 1.0)</code> globally for your engine.<br/>
-    Medium decay (~1.5s), warm low‑pass, neutral, non‑distorted tone.
-  </div>
+  // UPDATED: octave down + longer tail
+  function createPianoVoice(midi, velocity) {
+    ensureAudioContext();
+    const ctx = audioCtx;
 
-  <script>
-    // --- Audio setup ---
-    let audioCtx = null;
+    const now = ctx.currentTime;
 
-    function ensureAudioContext() {
-      if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const status = document.getElementById('status');
-        if (status) status.textContent = 'Audio ready – click a note or call playNote(midi, velocity).';
-      }
-    }
+    // ↓↓↓ UPDATED ENVELOPE ↓↓↓
+    const duration = 3.0;     // doubled tail (was 1.5)
+    const attack = 0.005;
+    const decay = 0.25;
+    const sustainLevel = 0.35;
+    const release = 1.2;      // longer release to match longer tail
+    // ↑↑↑ UPDATED ENVELOPE ↑↑↑
 
-    // MIDI note → frequency
-    function midiToFreq(midi) {
-      return 440 * Math.pow(2, (midi - 69) / 12);
-    }
+    // ↓↓↓ UPDATED OCTAVE ↓↓↓
+    const shiftedMidi = midi - 12;   // drop by one octave
+    const freq = midiToFreq(shiftedMidi);
+    // ↑↑↑ UPDATED OCTAVE ↑↑↑
 
-    // Simple neutral “piano‑ish” tone using layered oscillators + envelope + warm LPF
-    function createPianoVoice(midi, velocity) {
-      ensureAudioContext();
-      const ctx = audioCtx;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(velocity, now + attack);
+    gain.gain.linearRampToValueAtTime(velocity * sustainLevel, now + attack + decay);
+    gain.gain.setTargetAtTime(0, now + duration, release);
 
-      const now = ctx.currentTime;
-      const duration = 1.5; // medium decay
-      const attack = 0.005;
-      const decay = 0.25;
-      const sustainLevel = 0.35;
-      const release = 0.6;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    const baseCutoff = 4200;                 // slightly darker for lower octave
+    const noteOffset = (shiftedMidi - 60) * 60;
+    lp.frequency.setValueAtTime(Math.max(1200, baseCutoff + noteOffset), now);
+    lp.Q.setValueAtTime(0.7, now);
 
-      const freq = midiToFreq(midi);
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const osc3 = ctx.createOscillator();
 
-      // Gain envelope
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(velocity, now + attack);
-      gain.gain.linearRampToValueAtTime(velocity * sustainLevel, now + attack + decay);
-      gain.gain.setTargetAtTime(0, now + duration, release);
+    osc1.type = 'sine';
+    osc2.type = 'sine';
+    osc3.type = 'sine';
 
-      // Warm low‑pass filter
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      // Slightly brighter in midrange, darker in extremes
-      const baseCutoff = 4500;
-      const noteOffset = (midi - 60) * 80; // modest tilt
-      lp.frequency.setValueAtTime(Math.max(1500, baseCutoff + noteOffset), now);
-      lp.Q.setValueAtTime(0.7, now);
+    osc1.frequency.setValueAtTime(freq, now);
+    osc2.frequency.setValueAtTime(freq * 2, now);
+    osc3.frequency.setValueAtTime(freq * 3, now);
 
-      // Slight “piano‑like” harmonic stack: fundamental + 2nd + 3rd partials
-      const osc1 = ctx.createOscillator();
-      const osc2 = ctx.createOscillator();
-      const osc3 = ctx.createOscillator();
+    const g1 = ctx.createGain();
+    const g2 = ctx.createGain();
+    const g3 = ctx.createGain();
 
-      osc1.type = 'sine';
-      osc2.type = 'sine';
-      osc3.type = 'sine';
+    g1.gain.setValueAtTime(1.0, now);
+    g2.gain.setValueAtTime(0.35, now);
+    g3.gain.setValueAtTime(0.18, now);
 
-      osc1.frequency.setValueAtTime(freq, now);
-      osc2.frequency.setValueAtTime(freq * 2, now);
-      osc3.frequency.setValueAtTime(freq * 3, now);
+    osc2.detune.setValueAtTime(+3, now);
+    osc3.detune.setValueAtTime(-4, now);
 
-      const g1 = ctx.createGain();
-      const g2 = ctx.createGain();
-      const g3 = ctx.createGain();
+    osc1.connect(g1);
+    osc2.connect(g2);
+    osc3.connect(g3);
 
-      g1.gain.setValueAtTime(1.0, now);
-      g2.gain.setValueAtTime(0.35, now);
-      g3.gain.setValueAtTime(0.18, now);
+    g1.connect(lp);
+    g2.connect(lp);
+    g3.connect(lp);
 
-      // Slight detune for body without chorus‑y beating
-      osc2.detune.setValueAtTime(+3, now);
-      osc3.detune.setValueAtTime(-4, now);
+    lp.connect(gain);
+    gain.connect(ctx.destination);
 
-      osc1.connect(g1);
-      osc2.connect(g2);
-      osc3.connect(g3);
+    osc1.start(now);
+    osc2.start(now);
+    osc3.start(now);
 
-      g1.connect(lp);
-      g2.connect(lp);
-      g3.connect(lp);
+    const stopTime = now + duration + release * 2;
+    osc1.stop(stopTime);
+    osc2.stop(stopTime);
+    osc3.stop(stopTime);
+  }
 
-      lp.connect(gain);
-      gain.connect(ctx.destination);
+  function playNote(midi, velocity = 1.0) {
+    velocity = Math.max(0.05, Math.min(1.0, velocity || 1.0));
+    createPianoVoice(midi, velocity);
+  }
 
-      osc1.start(now);
-      osc2.start(now);
-      osc3.start(now);
-
-      const stopTime = now + duration + release * 2;
-      osc1.stop(stopTime);
-      osc2.stop(stopTime);
-      osc3.stop(stopTime);
-
-      return { osc1, osc2, osc3, gain, lp };
-    }
-
-    // Public API: playNote(midi, velocity = 1.0)
-    function playNote(midi, velocity = 1.0) {
-      velocity = Math.max(0.05, Math.min(1.0, velocity || 1.0));
-      createPianoVoice(midi, velocity);
-    }
-
-    // Expose globally for your engine
-    window.playNote = playNote;
-
-    // UI wiring
-    document.addEventListener('click', (e) => {
-      const btn = e.target.closest('button.key');
-      if (!btn) return;
-      const midi = parseInt(btn.getAttribute('data-note'), 10);
-      if (!isNaN(midi)) {
-        playNote(midi, 0.9);
-      }
-    });
-
-    // Resume audio context on first user gesture (mobile / some browsers)
-    ['click', 'keydown', 'touchstart'].forEach(evt => {
-      window.addEventListener(evt, () => {
-        if (audioCtx && audioCtx.state === 'suspended') {
-          audioCtx.resume();
-        } else if (!audioCtx) {
-          ensureAudioContext();
-        }
-      }, { once: true });
-    });
-
-    // Initial status text
-    const status = document.getElementById('status');
-    if (status) {
-      status.textContent = 'Click anywhere to unlock audio, then use the keys or playNote(midi).';
-    }
-  </script>
-</body>
-</html>
+  window.playNote = playNote;
+</script>
