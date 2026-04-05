@@ -1,79 +1,92 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Test Page</title>
-</head>
-<body style="background:#111; color:#eee; font-family:sans-serif; padding:20px;">
+let audioCtx = null;
 
-  <h1>Test Page Loaded</h1>
-  <p>If you can see this text, the HTML is working.</p>
-
-  <button onclick="playCChord()">Play C Chord</button>
-
-<script>
-  let audioCtx = null;
-
-  function ensureAudioContext() {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
+function ensureAudioContext() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
+}
 
-  function midiToFreq(midi) {
-    return 440 * Math.pow(2, (midi - 69) / 12);
-  }
+function midiToFreq(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
 
-  function createPianoVoice(midi, velocity) {
-    ensureAudioContext();
-    const ctx = audioCtx;
-    const now = ctx.currentTime;
+// Warm, smooth, non‑distorted tone
+function createPianoVoice(midi, velocity) {
+  ensureAudioContext();
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
 
-    const duration = 3.0;
-    const attack = 0.005;
-    const decay = 0.25;
-    const sustain = 0.35;
-    const release = 1.2;
+  // Envelope (smooth, long tail)
+  const duration = 2.8;
+  const attack = 0.01;
+  const decay = 0.4;
+  const sustain = 0.45;
+  const release = 1.2;
 
-    const shifted = midi - 12;
-    const freq = midiToFreq(shifted);
+  // ONE OCTAVE UP
+  const shifted = midi + 12;
+  const freq = midiToFreq(shifted);
 
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(velocity, now + attack);
-    gain.gain.linearRampToValueAtTime(velocity * sustain, now + attack + decay);
-    gain.gain.setTargetAtTime(0, now + duration, release);
+  // Gain envelope
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(velocity * 0.8, now + attack);
+  gain.gain.linearRampToValueAtTime(velocity * sustain, now + attack + decay);
+  gain.gain.setTargetAtTime(0, now + duration, release);
 
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.setValueAtTime(3000, now);
+  // Warm low‑pass filter
+  const lp = ctx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.setValueAtTime(2400, now);  // smoother, warmer
+  lp.Q.setValueAtTime(0.6, now);
 
-    const osc = ctx.createOscillator();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(freq, now);
+  // Fundamental + soft 2nd harmonic
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
 
-    osc.connect(lp);
-    lp.connect(gain);
-    gain.connect(ctx.destination);
+  osc1.type = "sine";
+  osc2.type = "sine";
 
-    osc.start(now);
-    osc.stop(now + duration + release);
-  }
+  osc1.frequency.setValueAtTime(freq, now);
+  osc2.frequency.setValueAtTime(freq * 2, now);
 
-  function playNote(midi, velocity = 1.0) {
-    createPianoVoice(midi, velocity);
-  }
+  // Gains for partials
+  const g1 = ctx.createGain();
+  const g2 = ctx.createGain();
 
-  function playCChord() {
-    playNote(60);
-    playNote(64);
-    playNote(67);
-  }
+  g1.gain.value = 1.0;
+  g2.gain.value = 0.18;  // softer harmonic = less distortion
 
-  window.addEventListener("click", () => {
-    playCChord();
-  }, { once: true });
-</script>
+  // Slight random detune for warmth (not EP buzz)
+  osc1.detune.value = (Math.random() - 0.5) * 2;
+  osc2.detune.value = (Math.random() - 0.5) * 3;
 
-</body>
-</html>
+  osc1.connect(g1);
+  osc2.connect(g2);
+
+  g1.connect(lp);
+  g2.connect(lp);
+
+  lp.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc1.start(now);
+  osc2.start(now);
+
+  const stopTime = now + duration + release * 2;
+  osc1.stop(stopTime);
+  osc2.stop(stopTime);
+}
+
+function playNote(midi, velocity = 1.0) {
+  velocity = Math.max(0.05, Math.min(1.0, velocity));
+  createPianoVoice(midi, velocity);
+}
+
+window.playNote = playNote;
+
+function playCChord() {
+  playNote(60);
+  playNote(64);
+  playNote(67);
+}
