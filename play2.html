@@ -58,12 +58,11 @@ const NOTE_FILES = {
 };
 
 // ------------------------------------------------------------
-// 2. Clean, correct chord parser (fixes 2-note chords)
+// 2. Clean, correct chord parser
 // ------------------------------------------------------------
 function getChordFiles(chord) {
   chord = chord.trim().toUpperCase();
 
-  // Extract root + quality
   const match = chord.match(/^([A-G](#|B)?)(.*)$/);
   if (!match) return ["C4.wav","E4.wav","G4.wav"];
 
@@ -71,7 +70,11 @@ function getChordFiles(chord) {
   let quality = match[3].trim();
 
   // Normalize flats
-  root = root.replace("B", "B").replace("BB", "A#");
+  if (root === "BB") root = "A#";
+  if (root === "EB") root = "D#";
+  if (root === "AB") root = "G#";
+  if (root === "DB") root = "C#";
+  if (root === "GB") root = "F#";
 
   // Normalize qualities
   quality = quality
@@ -88,8 +91,8 @@ function getChordFiles(chord) {
 
   const intervals = {
     "":     [0, 4, 7],
-    "M":    [0, 3, 7],
     "MAJ":  [0, 4, 7],
+    "M":    [0, 3, 7],
     "7":    [0, 4, 7, 10],
     "MAJ7": [0, 4, 7, 11],
     "M7":   [0, 3, 7, 10]
@@ -113,22 +116,32 @@ function playChordFromInput() {
 }
 
 // ------------------------------------------------------------
-// 4. Play all WAV files for a chord
+// 4. Keep audio objects alive globally
+// ------------------------------------------------------------
+let activeVoices = [];
+
+// ------------------------------------------------------------
+// 5. Play all WAV files for a chord
 // ------------------------------------------------------------
 function playChord(chord) {
+  // stop previous chord
+  activeVoices.forEach(a => a.pause());
+  activeVoices = [];
+
   const files = getChordFiles(chord);
   files.forEach(file => playSample(file));
 }
 
 // ------------------------------------------------------------
-// 5. Load + play a single WAV file (guaranteed 6-second sustain)
+// 6. Load + play a single WAV file (guaranteed 6-second sustain)
 // ------------------------------------------------------------
 function playSample(filename) {
   const audio = new Audio(filename);
   audio.loop = true;      // must be set BEFORE play()
   audio.play();
 
-  // Guaranteed sustain
+  activeVoices.push(audio); // keep reference alive
+
   setTimeout(() => {
     audio.loop = false;
     audio.pause();
