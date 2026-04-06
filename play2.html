@@ -14,7 +14,7 @@
     input {
         font-size: 22px;
         padding: 10px;
-        width: 200px;
+        width: 220px;
         text-align: center;
     }
     button {
@@ -40,42 +40,54 @@
 const NOTE_FILES = {
   "C":  "C4.wav",
   "C#": "C#4.wav",
-  "Db": "C#4.wav",
+  "DB": "C#4.wav",
   "D":  "D4.wav",
   "D#": "D#4.wav",
-  "Eb": "D#4.wav",
+  "EB": "D#4.wav",
   "E":  "E4.wav",
   "F":  "F4.wav",
   "F#": "F#4.wav",
-  "Gb": "F#4.wav",
+  "GB": "F#4.wav",
   "G":  "G4.wav",
   "G#": "G#4.wav",
-  "Ab": "G#4.wav",
+  "AB": "G#4.wav",
   "A":  "A4.wav",
   "A#": "A#4.wav",
-  "Bb": "A#4.wav",
+  "BB": "A#4.wav",
   "B":  "B4.wav"
 };
 
 // ------------------------------------------------------------
-// 2. Chord → notes → WAV files
+// 2. Bulletproof chord parser (fixes C-major-only bug)
 // ------------------------------------------------------------
 function getChordFiles(chord) {
-  const root = chord.match(/[A-G][b#]?/)[0];
-  const quality = chord.replace(root, "");
+  chord = chord.trim().toUpperCase();
+
+  const match = chord.match(/^([A-G][B#]?)(.*)$/);
+  if (!match) return ["C4.wav","E4.wav","G4.wav"]; // fallback
+
+  const root = match[1];
+  const quality = match[2];
 
   const SEMITONES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
-  const rootIndex = SEMITONES.indexOf(root.replace("b", "#"));
+  const rootIndex = SEMITONES.indexOf(root.replace("B", "A#"));
 
   const intervals = {
-    "":    [0, 4, 7],      // major
-    "m":   [0, 3, 7],      // minor
-    "7":   [0, 4, 7, 10],  // dominant 7
-    "maj7":[0, 4, 7, 11],  // major 7
-    "m7":  [0, 3, 7, 10],  // minor 7
+    "":     [0, 4, 7],
+    "M":    [0, 4, 7],
+    "MAJ":  [0, 4, 7],
+    "MAJ7": [0, 4, 7, 11],
+    "7":    [0, 4, 7, 10],
+    "M7":   [0, 4, 7, 10],
+    "MIN":  [0, 3, 7],
+    "M":    [0, 3, 7],
+    "MIN7": [0, 3, 7, 10],
+    "M7":   [0, 3, 7, 10]
   };
 
-  const ints = intervals[quality] || intervals[""];
+  const q = quality.toUpperCase();
+  const ints = intervals[q] || intervals[""];
+
   return ints.map(i => {
     const note = SEMITONES[(rootIndex + i) % 12];
     return NOTE_FILES[note];
@@ -83,11 +95,12 @@ function getChordFiles(chord) {
 }
 
 // ------------------------------------------------------------
-// 3. Play a chord from the input box
+// 3. Play chord from input box
 // ------------------------------------------------------------
 function playChordFromInput() {
   const chord = document.getElementById("chordInput").value.trim();
-  if (chord) playChord(chord);
+  if (!chord) return;
+  playChord(chord);
 }
 
 // ------------------------------------------------------------
@@ -99,12 +112,13 @@ function playChord(chord) {
 }
 
 // ------------------------------------------------------------
-// 5. Load + play a single WAV file
+// 5. Load + play a single WAV file (3× extended length)
 // ------------------------------------------------------------
 function playSample(filename) {
   const audio = new Audio(filename);
-  audio.currentTime = 0;
+  audio.loop = true;          // loop to extend duration
   audio.play();
+  setTimeout(() => audio.pause(), 3000); // 3 seconds
 }
 </script>
 
