@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>Chromatic Chord Engine</title>
+<title>Grand Piano Audition</title>
 <style>
     body {
         font-family: Arial, sans-serif;
@@ -11,120 +11,100 @@
         text-align: center;
         padding: 40px;
     }
-    h1 {
-        color: #6cf;
-        margin-bottom: 10px;
+    input {
+        font-size: 22px;
+        padding: 10px;
+        width: 200px;
+        text-align: center;
     }
     button {
-        padding: 12px 20px;
-        margin: 8px;
-        font-size: 18px;
-        border: none;
-        border-radius: 6px;
+        font-size: 22px;
+        padding: 10px 20px;
+        margin-left: 10px;
         cursor: pointer;
-        background: #333;
-        color: #fff;
-        transition: 0.2s;
-    }
-    button:hover {
-        background: #555;
-    }
-    #startOverlay {
-        position: fixed;
-        top: 0; left: 0;
-        width: 100%; height: 100%;
-        background: rgba(0,0,0,0.85);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 9999;
-    }
-    #startOverlay button {
-        background: #0a84ff;
-        font-size: 24px;
-        padding: 20px 40px;
-    }
-    #log {
-        margin-top: 20px;
-        font-size: 14px;
-        color: #9cf;
-        white-space: pre-line;
     }
 </style>
 </head>
 
 <body>
 
-<div id="startOverlay">
-    <button onclick="begin()">Click to Begin</button>
-</div>
+<h1>Grand Piano Audition</h1>
 
-<h1>Chromatic Chord Engine</h1>
-<p>All 12 notes loaded directly from WAV files in the root folder.</p>
-
-<button onclick="playChord(['C4','E4','G4'])">C Major</button>
-<button onclick="playChord(['D4','F4','A4'])">D Minor</button>
-<button onclick="playChord(['G4','B4','D4','F4'])">G7</button>
-<button onclick="playChord(['C4','D#4','G4'])">C Minor</button>
-
-<div id="log"></div>
+<input id="chordInput" placeholder="Enter chord (C, F#m, Bbmaj7)">
+<button onclick="playChordFromInput()">Play</button>
 
 <script>
-let audioCtx = null;
-let buffers = {};
-let ready = false;
+// ------------------------------------------------------------
+// 1. Your 12-note custom Grand Piano sample map
+// ------------------------------------------------------------
+const NOTE_FILES = {
+  "C":  "C4.wav",
+  "C#": "C#4.wav",
+  "Db": "C#4.wav",
+  "D":  "D4.wav",
+  "D#": "D#4.wav",
+  "Eb": "D#4.wav",
+  "E":  "E4.wav",
+  "F":  "F4.wav",
+  "F#": "F#4.wav",
+  "Gb": "F#4.wav",
+  "G":  "G4.wav",
+  "G#": "G#4.wav",
+  "Ab": "G#4.wav",
+  "A":  "A4.wav",
+  "A#": "A#4.wav",
+  "Bb": "A#4.wav",
+  "B":  "B4.wav"
+};
 
-function log(msg) {
-    document.getElementById("log").textContent += msg + "\n";
+// ------------------------------------------------------------
+// 2. Chord → notes → WAV files
+// ------------------------------------------------------------
+function getChordFiles(chord) {
+  const root = chord.match(/[A-G][b#]?/)[0];
+  const quality = chord.replace(root, "");
+
+  const SEMITONES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+  const rootIndex = SEMITONES.indexOf(root.replace("b", "#"));
+
+  const intervals = {
+    "":    [0, 4, 7],      // major
+    "m":   [0, 3, 7],      // minor
+    "7":   [0, 4, 7, 10],  // dominant 7
+    "maj7":[0, 4, 7, 11],  // major 7
+    "m7":  [0, 3, 7, 10],  // minor 7
+  };
+
+  const ints = intervals[quality] || intervals[""];
+  return ints.map(i => {
+    const note = SEMITONES[(rootIndex + i) % 12];
+    return NOTE_FILES[note];
+  });
 }
 
-async function loadNote(name) {
-    log("Loading " + name + ".wav ...");
-    const response = await fetch(name + ".wav");
-    if (!response.ok) {
-        log("ERROR: " + name + ".wav not found.");
-        return null;
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    return audioCtx.decodeAudioData(arrayBuffer);
+// ------------------------------------------------------------
+// 3. Play a chord from the input box
+// ------------------------------------------------------------
+function playChordFromInput() {
+  const chord = document.getElementById("chordInput").value.trim();
+  if (chord) playChord(chord);
 }
 
-async function begin() {
-    document.getElementById("startOverlay").style.display = "none";
-
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    log("AudioContext unlocked.");
-
-    const noteNames = [
-        "C4","C#4","D4","D#4","E4","F4",
-        "F#4","G4","G#4","A4","A#4","B4"
-    ];
-
-    for (const n of noteNames) {
-        buffers[n] = await loadNote(n);
-    }
-
-    ready = true;
-    log("All notes loaded.");
+// ------------------------------------------------------------
+// 4. Play all WAV files for a chord
+// ------------------------------------------------------------
+function playChord(chord) {
+  const files = getChordFiles(chord);
+  files.forEach(file => playSample(file));
 }
 
-function playChord(notes) {
-    if (!ready) {
-        log("Chord attempted before ready.");
-        return;
-    }
-
-    const now = audioCtx.currentTime;
-    notes.forEach(n => {
-        if (!buffers[n]) {
-            log("Missing buffer: " + n);
-            return;
-        }
-        const src = audioCtx.createBufferSource();
-        src.buffer = buffers[n];
-        src.connect(audioCtx.destination);
-        src.start(now);
-    });
+// ------------------------------------------------------------
+// 5. Load + play a single WAV file
+// ------------------------------------------------------------
+function playSample(filename) {
+  const audio = new Audio(filename);
+  audio.currentTime = 0;
+  audio.play();
 }
 </script>
 
