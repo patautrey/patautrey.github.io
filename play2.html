@@ -30,78 +30,74 @@
 
 <h1>Grand Piano Audition</h1>
 
-<input id="chordInput" placeholder="Enter chord (C, F#m, Bb)">
+<input id="chordInput" placeholder="Enter chord (C, F#m, Bbmaj7)">
 <button onclick="playChordFromInput()">Play</button>
 
 <script>
 // ------------------------------------------------------------
-// 1. 12-note map (sharps only)
+// 1. Your 12-note custom Grand Piano sample map
 // ------------------------------------------------------------
 const NOTE_FILES = {
   "C":  "C4.wav",
   "C#": "C#4.wav",
+  "DB": "C#4.wav",
   "D":  "D4.wav",
   "D#": "D#4.wav",
+  "EB": "D#4.wav",
   "E":  "E4.wav",
   "F":  "F4.wav",
   "F#": "F#4.wav",
+  "GB": "F#4.wav",
   "G":  "G4.wav",
   "G#": "G#4.wav",
+  "AB": "G#4.wav",
   "A":  "A4.wav",
   "A#": "A#4.wav",
+  "BB": "A#4.wav",
   "B":  "B4.wav"
 };
 
-const FLATS_TO_SHARPS = {
-  "DB": "C#",
-  "EB": "D#",
-  "GB": "F#",
-  "AB": "G#",
-  "BB": "A#"
-};
-
-const SEMI = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
-
 // ------------------------------------------------------------
-// 2. Super-simple chord parser: major / minor triads only
+// 2. Clean, correct chord parser
 // ------------------------------------------------------------
 function getChordFiles(chord) {
-  chord = chord.trim();
+  chord = chord.trim().toUpperCase();
 
-  if (!chord) return ["C4.wav","E4.wav","G4.wav"];
+  const match = chord.match(/^([A-G](#|B)?)(.*)$/);
+  if (!match) return ["C4.wav","E4.wav","G4.wav"];
 
-  // Root = first letter + optional #/b
-  const m = chord.match(/^([A-Ga-g][#b]?)/);
-  if (!m) return ["C4.wav","E4.wav","G4.wav"];
+  let root = match[1];
+  let quality = match[3].trim();
 
-  let root = m[1].toUpperCase();
-  let rest = chord.slice(m[0].length).toLowerCase();
+  // Normalize flats
+  const FLATS = { "DB":"C#", "EB":"D#", "GB":"F#", "AB":"G#", "BB":"A#" };
+  if (FLATS[root]) root = FLATS[root];
 
-  // Map flats to sharps
-  if (root.endsWith("B") && root.length === 2) {
-    const flatKey = root;
-    if (FLATS_TO_SHARPS[flatKey]) {
-      root = FLATS_TO_SHARPS[flatKey];
-    }
-  }
+  // Normalize qualities
+  quality = quality
+    .replace("MAJOR", "MAJ")
+    .replace("MINOR", "M")
+    .replace("MIN", "M")
+    .replace("MAJ7", "MAJ7")
+    .replace("M7", "M7")
+    .replace("MIN7", "M7")
+    .replace("DOM7", "7");
 
-  // Determine quality: minor if starts with "m" (but not "maj")
-  let isMinor = false;
-  if (rest.startsWith("m") && !rest.startsWith("maj")) {
-    isMinor = true;
-  }
-
+  const SEMI = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
   const rootIndex = SEMI.indexOf(root);
-  if (rootIndex === -1) return ["C4.wav","E4.wav","G4.wav"];
 
-  const intervals = isMinor ? [0, 3, 7] : [0, 4, 7];
+  const intervals = {
+    "":     [0, 4, 7],
+    "MAJ":  [0, 4, 7],
+    "M":    [0, 3, 7],
+    "7":    [0, 4, 7, 10],
+    "MAJ7": [0, 4, 7, 11],
+    "M7":   [0, 3, 7, 10]
+  };
 
-  const notes = intervals.map(i => {
-    const noteName = SEMI[(rootIndex + i) % 12];
-    return NOTE_FILES[noteName];
-  });
+  const ints = intervals[quality] || intervals[""];
 
-  return notes;
+  return ints.map(i => NOTE_FILES[SEMI[(rootIndex + i) % 12]]);
 }
 
 // ------------------------------------------------------------
@@ -122,7 +118,6 @@ let activeVoices = [];
 // 5. Play all WAV files for a chord
 // ------------------------------------------------------------
 function playChord(chord) {
-  // stop previous chord
   activeVoices.forEach(a => a.pause());
   activeVoices = [];
 
@@ -131,7 +126,7 @@ function playChord(chord) {
 }
 
 // ------------------------------------------------------------
-// 6. Load + play a single WAV file (≈4s sustain)
+// 6. Load + play a single WAV file (6-second sustain)
 // ------------------------------------------------------------
 function playSample(filename) {
   const audio = new Audio(filename);
@@ -143,7 +138,7 @@ function playSample(filename) {
   setTimeout(() => {
     audio.loop = false;
     audio.pause();
-  }, 4000); // ~4 seconds
+  }, 6000);
 }
 </script>
 
