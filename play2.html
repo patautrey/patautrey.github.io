@@ -58,35 +58,44 @@ const NOTE_FILES = {
 };
 
 // ------------------------------------------------------------
-// 2. Bulletproof chord parser (fixes C-major-only bug)
+// 2. Clean, correct chord parser (fixes 2-note chords)
 // ------------------------------------------------------------
 function getChordFiles(chord) {
   chord = chord.trim().toUpperCase();
 
-  const match = chord.match(/^([A-G][B#]?)(.*)$/);
-  if (!match) return ["C4.wav","E4.wav","G4.wav"]; // fallback
+  // Extract root + quality
+  const match = chord.match(/^([A-G](#|B)?)(.*)$/);
+  if (!match) return ["C4.wav","E4.wav","G4.wav"];
 
-  const root = match[1];
-  const quality = match[2];
+  let root = match[1];
+  let quality = match[3].trim();
+
+  // Normalize flats
+  root = root.replace("B", "B").replace("BB", "A#");
+
+  // Normalize qualities
+  quality = quality
+    .replace("MAJOR", "MAJ")
+    .replace("MINOR", "M")
+    .replace("MIN", "M")
+    .replace("MAJ7", "MAJ7")
+    .replace("M7", "M7")
+    .replace("MIN7", "M7")
+    .replace("DOM7", "7");
 
   const SEMITONES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
-  const rootIndex = SEMITONES.indexOf(root.replace("B", "A#"));
+  const rootIndex = SEMITONES.indexOf(root);
 
   const intervals = {
     "":     [0, 4, 7],
-    "M":    [0, 4, 7],
-    "MAJ":  [0, 4, 7],
-    "MAJ7": [0, 4, 7, 11],
-    "7":    [0, 4, 7, 10],
-    "M7":   [0, 4, 7, 10],
-    "MIN":  [0, 3, 7],
     "M":    [0, 3, 7],
-    "MIN7": [0, 3, 7, 10],
+    "MAJ":  [0, 4, 7],
+    "7":    [0, 4, 7, 10],
+    "MAJ7": [0, 4, 7, 11],
     "M7":   [0, 3, 7, 10]
   };
 
-  const q = quality.toUpperCase();
-  const ints = intervals[q] || intervals[""];
+  const ints = intervals[quality] || intervals[""];
 
   return ints.map(i => {
     const note = SEMITONES[(rootIndex + i) % 12];
@@ -112,14 +121,14 @@ function playChord(chord) {
 }
 
 // ------------------------------------------------------------
-// 5. Load + play a single WAV file (6-second sustain)
+// 5. Load + play a single WAV file (guaranteed 6-second sustain)
 // ------------------------------------------------------------
 function playSample(filename) {
   const audio = new Audio(filename);
-  audio.loop = true;          // loop to extend duration
+  audio.loop = true;      // must be set BEFORE play()
   audio.play();
 
-  // sustain for 6 seconds
+  // Guaranteed sustain
   setTimeout(() => {
     audio.loop = false;
     audio.pause();
