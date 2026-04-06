@@ -64,7 +64,7 @@ const FLATS_TO_SHARPS = {
 const SEMI = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 
 // ------------------------------------------------------------
-// 2. Bulletproof chord parser (major, minor, 7, maj7, m7)
+// 2. Bulletproof chord parser
 // ------------------------------------------------------------
 function getChordFiles(chord) {
   chord = chord.trim().toUpperCase();
@@ -75,4 +75,80 @@ function getChordFiles(chord) {
   let root = match[1];
   let quality = match[3].trim();
 
-  if
+  if (FLATS_TO_SHARPS[root]) {
+    root = FLATS_TO_SHARPS[root];
+  }
+
+  quality = quality
+    .replace("MAJOR", "MAJ")
+    .replace("MINOR", "M")
+    .replace("MIN", "M")
+    .replace("MAJ7", "MAJ7")
+    .replace("M7", "M7")
+    .replace("MIN7", "M7")
+    .replace("DOM7", "7");
+
+  const rootIndex = SEMI.indexOf(root);
+  if (rootIndex === -1) return ["C4.wav","E4.wav","G4.wav"];
+
+  const intervals = {
+    "":     [0, 4, 7],
+    "MAJ":  [0, 4, 7],
+    "M":    [0, 3, 7],
+    "7":    [0, 4, 7, 10],
+    "MAJ7": [0, 4, 7, 11],
+    "M7":   [0, 3, 7, 10]
+  };
+
+  const ints = intervals[quality] || intervals[""];
+
+  return ints.map(i => {
+    const noteName = SEMI[(rootIndex + i) % 12];
+    return NOTE_FILES[noteName];
+  });
+}
+
+// ------------------------------------------------------------
+// 3. Play chord from input
+// ------------------------------------------------------------
+function playChordFromInput() {
+  const chord = document.getElementById("chordInput").value.trim();
+  if (!chord) return;
+  playChord(chord);
+}
+
+// ------------------------------------------------------------
+// 4. Keep audio objects alive globally
+// ------------------------------------------------------------
+let activeVoices = [];
+
+// ------------------------------------------------------------
+// 5. Play all WAV files for a chord
+// ------------------------------------------------------------
+function playChord(chord) {
+  activeVoices.forEach(a => a.pause());
+  activeVoices = [];
+
+  const files = getChordFiles(chord);
+  files.forEach(file => playSample(file));
+}
+
+// ------------------------------------------------------------
+// 6. Load + play a single WAV file (cache‑busted)
+// ------------------------------------------------------------
+function playSample(filename) {
+  const audio = new Audio(filename + "?v=" + Date.now());
+  audio.loop = true;
+  audio.play();
+
+  activeVoices.push(audio);
+
+  setTimeout(() => {
+    audio.loop = false;
+    audio.pause();
+  }, 6000);
+}
+</script>
+
+</body>
+</html>
