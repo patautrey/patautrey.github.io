@@ -58,7 +58,7 @@ const NOTE_FILES = {
 };
 
 // ------------------------------------------------------------
-// 2. Clean, correct chord parser
+// 2. Correct chord parser (tested)
 // ------------------------------------------------------------
 function getChordFiles(chord) {
   chord = chord.trim().toUpperCase();
@@ -70,11 +70,8 @@ function getChordFiles(chord) {
   let quality = match[3].trim();
 
   // Normalize flats
-  if (root === "BB") root = "A#";
-  if (root === "EB") root = "D#";
-  if (root === "AB") root = "G#";
-  if (root === "DB") root = "C#";
-  if (root === "GB") root = "F#";
+  const FLATS = { "DB":"C#", "EB":"D#", "GB":"F#", "AB":"G#", "BB":"A#" };
+  if (FLATS[root]) root = FLATS[root];
 
   // Normalize qualities
   quality = quality
@@ -86,8 +83,8 @@ function getChordFiles(chord) {
     .replace("MIN7", "M7")
     .replace("DOM7", "7");
 
-  const SEMITONES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
-  const rootIndex = SEMITONES.indexOf(root);
+  const SEMI = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+  const rootIndex = SEMI.indexOf(root);
 
   const intervals = {
     "":     [0, 4, 7],
@@ -100,10 +97,7 @@ function getChordFiles(chord) {
 
   const ints = intervals[quality] || intervals[""];
 
-  return ints.map(i => {
-    const note = SEMITONES[(rootIndex + i) % 12];
-    return NOTE_FILES[note];
-  });
+  return ints.map(i => NOTE_FILES[SEMI[(rootIndex + i) % 12]]);
 }
 
 // ------------------------------------------------------------
@@ -133,14 +127,14 @@ function playChord(chord) {
 }
 
 // ------------------------------------------------------------
-// 6. Load + play a single WAV file (guaranteed 6-second sustain)
+// 6. Load + play a single WAV file (guaranteed sustain)
 // ------------------------------------------------------------
 function playSample(filename) {
   const audio = new Audio(filename);
-  audio.loop = true;      // must be set BEFORE play()
+  audio.loop = true;
   audio.play();
 
-  activeVoices.push(audio); // keep reference alive
+  activeVoices.push(audio);
 
   setTimeout(() => {
     audio.loop = false;
