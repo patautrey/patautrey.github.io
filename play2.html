@@ -40,7 +40,7 @@
 const NOTE_FILES = {
   "C":  "C4.wav",
   "C#": "C#4.wav",
-  "D":  "D4.wav",
+  "D":  "D4_v2.wav",   // ⭐ NEW FILE NAME
   "D#": "D#4.wav",
   "E":  "E4.wav",
   "F":  "F4.wav",
@@ -69,6 +69,10 @@ const SEMI = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 function getChordFiles(chord) {
   chord = chord.trim().toUpperCase();
 
-  // Extract root + accidental
   const match = chord.match(/^([A-G](#|B)?)(.*)$/);
-  if (!match) return ["C4.wav
+  if (!match) return ["C4.wav","E4.wav","G4.wav"];
+
+  let root = match[1];
+  let quality = match[3].trim();
+
+  if
