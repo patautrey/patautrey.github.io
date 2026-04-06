@@ -112,13 +112,18 @@ function playChord(chord) {
 }
 
 // ------------------------------------------------------------
-// 5. Load + play a single WAV file (3× extended length)
+// 5. Load + play a single WAV file (6-second sustain)
 // ------------------------------------------------------------
 function playSample(filename) {
   const audio = new Audio(filename);
   audio.loop = true;          // loop to extend duration
   audio.play();
-  setTimeout(() => audio.pause(), 3000); // 3 seconds
+
+  // sustain for 6 seconds
+  setTimeout(() => {
+    audio.loop = false;
+    audio.pause();
+  }, 6000);
 }
 </script>
 
