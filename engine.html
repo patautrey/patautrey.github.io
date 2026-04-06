@@ -1,7 +1,124 @@
 <!DOCTYPE html>
 <html>
+<head>
+<meta charset="UTF-8">
+<title>Grand Piano Audition</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        background: #111;
+        color: #eee;
+        text-align: center;
+        padding: 40px;
+    }
+    input {
+        font-size: 22px;
+        padding: 10px;
+        width: 240px;
+        text-align: center;
+    }
+    button {
+        font-size: 22px;
+        padding: 10px 20px;
+        margin-left: 10px;
+        cursor: pointer;
+    }
+</style>
+</head>
+
 <body>
-<h1>Test</h1>
-<button onclick="alert('JS works')">Test JS</button>
+
+<h1>Grand Piano Audition</h1>
+
+<input id="chordInput" placeholder="Enter chord (C, D, F#m, Bb, D7)">
+<button onclick="playChordFromInput()">Play</button>
+
+<script>
+const NOTE_FILES = {
+  "C":  "C4.wav",
+  "C#": "C#4.wav",
+  "D":  "D4_v2.wav",
+  "D#": "D#4.wav",
+  "E":  "E4.wav",
+  "F":  "F4.wav",
+  "F#": "F#4.wav",
+  "G":  "G4.wav",
+  "G#": "G#4.wav",
+  "A":  "A4.wav",
+  "A#": "A#4.wav",
+  "B":  "B4.wav"
+};
+
+const FLATS_TO_SHARPS = {
+  "DB": "C#",
+  "EB": "D#",
+  "GB": "F#",
+  "AB": "G#",
+  "BB": "A#"
+};
+
+const SEMI = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+
+function getChordFiles(chord) {
+  chord = chord.trim().toUpperCase();
+  const match = chord.match(/^([A-G](#|B)?)(.*)$/);
+  if (!match) return ["C4.wav","E4.wav","G4.wav"];
+
+  let root = match[1];
+  let quality = match[3].trim();
+
+  if (FLATS_TO_SHARPS[root]) root = FLATS_TO_SHARPS[root];
+
+  quality = quality
+    .replace("MAJOR", "MAJ")
+    .replace("MINOR", "M")
+    .replace("MIN", "M")
+    .replace("MAJ7", "MAJ7")
+    .replace("M7", "M7")
+    .replace("MIN7", "M7")
+    .replace("DOM7", "7");
+
+  const rootIndex = SEMI.indexOf(root);
+  if (rootIndex === -1) return ["C4.wav","E4.wav","G4.wav"];
+
+  const intervals = {
+    "":     [0, 4, 7],
+    "MAJ":  [0, 4, 7],
+    "M":    [0, 3, 7],
+    "7":    [0, 4, 7, 10],
+    "MAJ7": [0, 4, 7, 11],
+    "M7":   [0, 3, 7, 10]
+  };
+
+  return intervals[quality].map(i => {
+    const noteName = SEMI[(rootIndex + i) % 12];
+    return NOTE_FILES[noteName];
+  });
+}
+
+let activeVoices = [];
+
+function playChordFromInput() {
+  const chord = document.getElementById("chordInput").value.trim();
+  if (!chord) return;
+  playChord(chord);
+}
+
+function playChord(chord) {
+  activeVoices.forEach(a => a.pause());
+  activeVoices = [];
+  const files = getChordFiles(chord);
+  files.forEach(file => playSample(file));
+}
+
+function playSample(filename) {
+  const audio = new Audio(filename + "?v=" + Date.now());
+  audio.loop = true;
+  audio.play();
+  activeVoices.push(audio);
+  setTimeout(() => { audio.loop = false; audio.pause(); }, 6000);
+}
+</script>
+
 </body>
 </html>
